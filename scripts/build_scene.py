@@ -1,15 +1,33 @@
 from pathlib import Path
 import bpy
+from mathutils import Vector
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "output"
 OUTPUT.mkdir(parents=True, exist_ok=True)
 
+print("Blender version:", bpy.app.version_string)
+
 # Start from a completely empty scene.
 bpy.ops.wm.read_factory_settings(use_empty=True)
 
 scene = bpy.context.scene
-scene.render.engine = "BLENDER_EEVEE_NEXT"
+
+# Ubuntu runners may provide different Blender generations. Prefer modern Eevee
+# when available, but fall back to the older engine identifier used by Blender 3.x/4.0.
+engine_items = {
+    item.identifier
+    for item in scene.bl_rna.properties["render"].fixed_type.properties["engine"].enum_items
+}
+if "BLENDER_EEVEE_NEXT" in engine_items:
+    scene.render.engine = "BLENDER_EEVEE_NEXT"
+elif "BLENDER_EEVEE" in engine_items:
+    scene.render.engine = "BLENDER_EEVEE"
+else:
+    # Cycles is slower but gives us a final compatibility fallback for the proof.
+    scene.render.engine = "BLENDER_WORKBENCH"
+
+print("Render engine:", scene.render.engine)
 scene.render.resolution_x = 512
 scene.render.resolution_y = 512
 scene.render.resolution_percentage = 100
@@ -40,7 +58,13 @@ mat_subject.roughness = 0.72
 subject.data.materials.append(mat_subject)
 
 # Small top element to make orientation obvious in later renders.
-bpy.ops.mesh.primitive_cone_add(vertices=32, radius1=0.22, radius2=0.04, depth=0.75, location=(0, 0, 2.35))
+bpy.ops.mesh.primitive_cone_add(
+    vertices=32,
+    radius1=0.22,
+    radius2=0.04,
+    depth=0.75,
+    location=(0, 0, 2.35),
+)
 top = bpy.context.object
 top.name = "TopMarker"
 top.rotation_euler[1] = 0.18
@@ -55,12 +79,12 @@ scene.camera = camera
 camera.data.type = "ORTHO"
 camera.data.ortho_scale = 5.0
 
-# Point the camera at the subject.
+
 def look_at(obj, target):
     direction = target - obj.location
     obj.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
 
-from mathutils import Vector
+
 look_at(camera, Vector((0, 0, 1.2)))
 
 # Soft key and fill lights.
@@ -83,7 +107,11 @@ bpy.ops.wm.save_as_mainfile(filepath=str(OUTPUT / "scene.blend"))
 # Render the proof image.
 bpy.ops.render.render(write_still=True)
 
-# Export a portable runtime asset.
+# Export a portable runtime asset. glTF ships with standard Blender builds, but
+# report the available operators first so CI failures are immediately diagnosable.
+if not hasattr(bpy.ops.export_scene, "gltf"):
+    raise RuntimeError("This Blender package does not provide the glTF exporter")
+
 bpy.ops.export_scene.gltf(
     filepath=str(OUTPUT / "scene.glb"),
     export_format="GLB",
