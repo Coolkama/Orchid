@@ -1,0 +1,36 @@
+name: Render proof
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Blender
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender
+          blender --version
+
+      - name: Build and render scene
+        run: |
+          blender --background --python-exit-code 1 --python scripts/build_scene.py
+
+      - name: List generated files
+        run: ls -lh output
+
+      - name: Upload render artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchid-render-proof
+          path: output/
+          retention-days: 3
+          if-no-files-found: error
