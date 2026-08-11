@@ -1,0 +1,37 @@
+name: Prototype walk
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'assets/models/**'
+      - 'scripts/prototype_walk.py'
+      - '.github/workflows/prototype-walk.yml'
+  workflow_dispatch:
+
+jobs:
+  prototype-walk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install Blender
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender python3-numpy libegl1 libgl1 libglx-mesa0 libopengl0 mesa-utils
+          blender --version
+      - name: Build restrained walk cycle
+        run: |
+          blender --background --python-exit-code 1 --python scripts/prototype_walk.py -- --model=assets/models/glimmerkin.glb
+      - name: Show report
+        run: |
+          cat output/prototype-walk/report.json
+          ls -lh output/prototype-walk
+      - name: Upload walk proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchid-prototype-walk
+          path: output/prototype-walk/
+          retention-days: 7
+          if-no-files-found: error
