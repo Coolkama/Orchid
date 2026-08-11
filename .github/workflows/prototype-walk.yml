@@ -16,18 +16,34 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-      - name: Install Blender
+
+      - name: Install Blender and FFmpeg
         run: |
           sudo apt-get update
-          sudo apt-get install -y blender python3-numpy libegl1 libgl1 libglx-mesa0 libopengl0 mesa-utils
+          sudo apt-get install -y blender ffmpeg python3-numpy libegl1 libgl1 libglx-mesa0 libopengl0 mesa-utils
           blender --version
+          ffmpeg -version | head -n 1
+
       - name: Build restrained walk cycle
         run: |
           blender --background --python-exit-code 1 --python scripts/prototype_walk.py -- --model=assets/models/glimmerkin.glb
+
+      - name: Build video previews
+        run: |
+          cd output/prototype-walk
+          ffmpeg -y -framerate 24 -start_number 1 -i walk_%02d.png \
+            -vf "scale=512:512:flags=lanczos" \
+            -c:v libx264 -pix_fmt yuv420p -movflags +faststart preview.mp4
+
+          ffmpeg -y -framerate 24 -start_number 1 -i walk_%02d.png \
+            -vf "fps=24,scale=512:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=256[p];[s1][p]paletteuse=dither=sierra2_4a" \
+            -loop 0 preview.gif
+
       - name: Show report
         run: |
           cat output/prototype-walk/report.json
           ls -lh output/prototype-walk
+
       - name: Upload walk proof
         uses: actions/upload-artifact@v4
         with:
