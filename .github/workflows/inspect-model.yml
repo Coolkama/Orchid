@@ -1,6 +1,12 @@
 name: Inspect model
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'assets/models/**'
+      - 'scripts/inspect_glb.py'
+      - '.github/workflows/inspect-model.yml'
   workflow_dispatch:
     inputs:
       model_path:
@@ -17,10 +23,21 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Select model path
+        id: model
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "path=${{ inputs.model_path }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=assets/models/glimmerkin.glb" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Verify model exists
         run: |
-          test -f "${{ inputs.model_path }}" || { echo "Model not found: ${{ inputs.model_path }}"; exit 1; }
-          ls -lh "${{ inputs.model_path }}"
+          MODEL="${{ steps.model.outputs.path }}"
+          test -f "$MODEL" || { echo "Model not found: $MODEL"; exit 1; }
+          ls -lh "$MODEL"
 
       - name: Install Blender and headless graphics libraries
         run: |
@@ -30,7 +47,7 @@ jobs:
 
       - name: Inspect and render model
         run: |
-          blender --background --python-exit-code 1 --python scripts/inspect_glb.py -- --model="${{ inputs.model_path }}"
+          blender --background --python-exit-code 1 --python scripts/inspect_glb.py -- --model="${{ steps.model.outputs.path }}"
 
       - name: Show inspection report
         run: |
