@@ -1,0 +1,29 @@
+name: Inspect rig
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'assets/models/glimmerkin.glb'
+      - 'scripts/inspect_rig.py'
+      - '.github/workflows/inspect-rig.yml'
+  workflow_dispatch:
+
+jobs:
+  inspect-rig:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Blender
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender python3-numpy libegl1 libgl1 libglx-mesa0 libopengl0 mesa-utils
+      - name: Inspect current workhorse rig
+        run: blender --background --python-exit-code 1 --python scripts/inspect_rig.py -- --model=assets/models/glimmerkin.glb
+      - name: Upload rig report
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchid-rig-inspection
+          path: output/rig-inspection/
+          retention-days: 7
+          if-no-files-found: error
