@@ -1,0 +1,28 @@
+name: Head bone stills
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'assets/models/**'
+      - 'scripts/head_bone_stills.py'
+      - '.github/workflows/head-bone-stills.yml'
+  workflow_dispatch:
+jobs:
+  head-bone-stills:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Blender
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender python3-numpy libegl1 libgl1 libglx-mesa0 libopengl0 mesa-utils
+      - name: Render diagnostic stills
+        run: blender --background --python-exit-code 1 --python scripts/head_bone_stills.py -- --model=assets/models/glimmerkin.glb
+      - name: Upload stills
+        uses: actions/upload-artifact@v4
+        with:
+          name: limijoy-head-bone-stills
+          path: output/head-bone-stills/*.png
+          retention-days: 7
+          if-no-files-found: error
