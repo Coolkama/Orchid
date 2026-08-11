@@ -1,0 +1,46 @@
+name: Inspect model
+
+on:
+  workflow_dispatch:
+    inputs:
+      model_path:
+        description: Repository path to the GLB to inspect
+        required: true
+        default: assets/models/glimmerkin.glb
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify model exists
+        run: |
+          test -f "${{ inputs.model_path }}" || { echo "Model not found: ${{ inputs.model_path }}"; exit 1; }
+          ls -lh "${{ inputs.model_path }}"
+
+      - name: Install Blender and headless graphics libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender python3-numpy libegl1 libgl1 libglx-mesa0 libopengl0 mesa-utils
+          blender --version
+
+      - name: Inspect and render model
+        run: |
+          blender --background --python-exit-code 1 --python scripts/inspect_glb.py -- --model="${{ inputs.model_path }}"
+
+      - name: Show inspection report
+        run: |
+          cat output/inspection/report.json
+          ls -lh output/inspection
+
+      - name: Upload inspection artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchid-model-inspection
+          path: output/inspection/
+          retention-days: 7
+          if-no-files-found: error
