@@ -26,7 +26,6 @@ def bone_record(b):
         'head_local': v3(b.head_local),
         'tail_local': v3(b.tail_local),
         'length': round(float(b.length),6),
-        'roll_radians': round(float(b.roll),6),
         'local_axis_x_world_basis': v3(m @ Vector((1,0,0))),
         'local_axis_y_world_basis': v3(m @ Vector((0,1,0))),
         'local_axis_z_world_basis': v3(m @ Vector((0,0,1))),
