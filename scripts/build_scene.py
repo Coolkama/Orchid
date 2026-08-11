@@ -24,7 +24,6 @@ if "BLENDER_EEVEE_NEXT" in engine_items:
 elif "BLENDER_EEVEE" in engine_items:
     scene.render.engine = "BLENDER_EEVEE"
 else:
-    # Cycles is slower but gives us a final compatibility fallback for the proof.
     scene.render.engine = "BLENDER_WORKBENCH"
 
 print("Render engine:", scene.render.engine)
@@ -34,8 +33,10 @@ scene.render.resolution_percentage = 100
 scene.render.image_settings.file_format = "PNG"
 scene.render.filepath = str(OUTPUT / "preview.png")
 
-# World/background.
-scene.world.color = (0.035, 0.035, 0.045)
+# Factory settings with use_empty=True may leave the scene without a World.
+world = bpy.data.worlds.new("OrchidWorld") if scene.world is None else scene.world
+scene.world = world
+world.color = (0.035, 0.035, 0.045)
 
 # Ground.
 bpy.ops.mesh.primitive_plane_add(size=12, location=(0, 0, 0))
