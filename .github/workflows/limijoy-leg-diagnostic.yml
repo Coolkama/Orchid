@@ -13,7 +13,7 @@ jobs:
       - name: Install Blender
         run: |
           sudo apt-get update
-          sudo apt-get install -y blender libegl1 libgl1 libglx-mesa0 libopengl0 mesa-utils
+          sudo apt-get install -y blender python3-numpy libegl1 libgl1 libglx-mesa0 libopengl0 mesa-utils
       - name: Render leg control stills
         run: blender --background --python-exit-code 1 --python scripts/limijoy_leg_diagnostic.py -- --model=assets/models/glimmerkin.glb
       - name: Upload diagnostic
