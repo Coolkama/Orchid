@@ -14,18 +14,18 @@ def key(frame, upper=(0,0,0), elbow=(0,0,0), wrist=(0,0,0), hand=(0,0,0), girdle
  set_rot('girdle',girdle); set_rot('upper',upper); set_rot('elbow',elbow); set_rot('wrist_helper',wrist); set_rot('hand_helper',hand)
  for role in A:
   arm.pose.bones[A[role]].keyframe_insert('rotation_euler',frame=frame)
-# Empirical map from isolated three-frame diagnostics:
-# Bone_022: X = side raise/lower, Y = long-axis roll, Z = fore/aft swing.
-# Positive Z moved the arm toward/behind the torso in the diagnostic view, therefore NEGATIVE Z is used for reach-forward.
-# Bone_021: X is the strongest visible elbow/distal-arm bend.
-# Bone_020/019 have only minor visible influence, so keep them almost neutral to avoid accidental palm/hand gestures.
-# Shoulder girdle stays neutral; no Y roll is introduced on the upper arm.
+# Verified from orthographic wireframe + visible-rig diagnostics:
+# character-forward in the imported Blender scene is -Y.
+# Bone_022: negative X moves the upper-arm chain forward; Y is axial roll; Z also changes depth but adds strong lateral/vertical displacement.
+# Bone_021: negative X bends the distal arm forward; Y is axial roll; Z is mainly the secondary bend plane.
+# Therefore this reach is deliberately X-dominant, with Y locked to zero and only tiny Z shaping corrections.
+# Shoulder/girdle and distal helper bones stay effectively neutral so the test isolates the two proven controls.
 key(1)
-key(9,  upper=(2,0,-10), elbow=(4,0,0))
-key(19, upper=(4,0,-28), elbow=(12,0,0), wrist=(1,0,0))
-key(27, upper=(5,0,-38), elbow=(18,0,0), wrist=(2,0,0))
-key(35, upper=(4,0,-38), elbow=(16,0,0), wrist=(2,0,0))
-key(43, upper=(2,0,-12), elbow=(5,0,0))
+key(9,  upper=(-8,0,0),  elbow=(-4,0,0))
+key(19, upper=(-22,0,-2), elbow=(-12,0,1))
+key(27, upper=(-34,0,-3), elbow=(-22,0,2))
+key(35, upper=(-34,0,-3), elbow=(-20,0,2))
+key(43, upper=(-12,0,-1), elbow=(-6,0,0))
 key(53)
 for fc in arm.animation_data.action.fcurves:
  for kp in fc.keyframe_points: kp.interpolation='BEZIER'
