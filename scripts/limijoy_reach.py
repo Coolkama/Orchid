@@ -13,23 +13,24 @@ def set_rot(role, xyz):
 def key(frame, upper=(0,0,0), elbow=(0,0,0), wrist=(0,0,0), hand=(0,0,0), girdle=(0,0,0), head=(0,0,0)):
  set_rot('girdle',girdle); set_rot('upper',upper); set_rot('elbow',elbow); set_rot('wrist_helper',wrist); set_rot('hand_helper',hand); set_rot('head',head)
  for role in A: arm.pose.bones[A[role]].keyframe_insert('rotation_euler',frame=frame)
-# Verified from orthographic wireframe + visible-rig diagnostics:
-# character-forward in the imported Blender scene is -Y.
-# Bone_022: negative X moves the upper-arm chain forward; Y is axial roll.
-# Bone_021: negative X bends the distal arm forward; Y is axial roll.
-# Previous -34/-22 test moved in the correct direction but did not reach far enough, so this pass extends both proven controls.
-# Y remains locked at zero to avoid the earlier palm-up/beckoning twist. Z is only a small clearance correction.
-# Bone_034 head map from earlier diagnostic: Y turns left/right; negative Y turns Limijoy toward his right/reaching hand.
+# Forward direction is now established: Bone_022 negative X moves the upper arm forward.
+# The previous pass proved that large Bone_021 negative X over-flexes the elbow and curls the hand back toward the torso.
+# This pass holds the upper arm at the proven forward value and compares three elbow endpoint variants:
+# +10 degrees, 0 degrees, and -10 degrees X. Y stays at zero throughout to avoid axial roll.
+# The sequence deliberately pauses on each variant so the straightest reach can be identified visually.
 key(1)
-key(9,  upper=(-10,0,0), elbow=(-5,0,0), head=(0,-2,0))
-key(19, upper=(-28,0,-2), elbow=(-15,0,1), head=(0,-5,0))
-key(27, upper=(-44,0,-3), elbow=(-27,0,2), head=(0,-8,0))
-key(35, upper=(-48,0,-3), elbow=(-30,0,2), head=(0,-10,0))
-key(43, upper=(-18,0,-1), elbow=(-9,0,0), head=(0,-4,0))
-key(53)
+key(9,  upper=(-24,0,-1), elbow=(0,0,0), head=(0,-4,0))
+key(17, upper=(-48,0,-3), elbow=(10,0,0), head=(0,-10,0))
+key(25, upper=(-48,0,-3), elbow=(10,0,0), head=(0,-10,0))
+key(33, upper=(-48,0,-3), elbow=(0,0,0), head=(0,-10,0))
+key(41, upper=(-48,0,-3), elbow=(0,0,0), head=(0,-10,0))
+key(49, upper=(-48,0,-3), elbow=(-10,0,0), head=(0,-10,0))
+key(57, upper=(-48,0,-3), elbow=(-10,0,0), head=(0,-10,0))
+key(65, upper=(-24,0,-1), elbow=(0,0,0), head=(0,-4,0))
+key(73)
 for fc in arm.animation_data.action.fcurves:
  for kp in fc.keyframe_points: kp.interpolation='BEZIER'
-s.frame_start=1;s.frame_end=53;s.render.fps=24
+s.frame_start=1;s.frame_end=73;s.render.fps=24
 pts=[main.matrix_world@Vector(c) for c in main.bound_box]; mn=Vector((min(p.x for p in pts),min(p.y for p in pts),min(p.z for p in pts))); mx=Vector((max(p.x for p in pts),max(p.y for p in pts),max(p.z for p in pts))); cen=(mn+mx)*.5; ext=max(mx-mn)
 bpy.ops.mesh.primitive_plane_add(size=ext*6,location=(cen.x,cen.y,mn.z)); gm=bpy.data.materials.new('Ground');gm.diffuse_color=(.055,.055,.07,1);bpy.context.object.data.materials.append(gm)
 eng={x.identifier for x in bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items}; s.render.engine='BLENDER_EEVEE_NEXT' if 'BLENDER_EEVEE_NEXT' in eng else ('BLENDER_EEVEE' if 'BLENDER_EEVEE' in eng else 'BLENDER_WORKBENCH');s.render.resolution_x=s.render.resolution_y=384;s.render.resolution_percentage=100;s.render.image_settings.file_format='PNG';s.render.filepath=str(FR/'frame_')
