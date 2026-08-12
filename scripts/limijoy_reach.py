@@ -6,26 +6,26 @@ a=next((x for x in sys.argv if x.startswith('--model=')),None); model=Path(a.spl
 if not model.is_absolute(): model=ROOT/model
 bpy.ops.wm.read_factory_settings(use_empty=True); bpy.ops.import_scene.gltf(filepath=str(model)); s=bpy.context.scene
 arm=next(o for o in s.objects if o.type=='ARMATURE'); main=max([o for o in s.objects if o.type=='MESH' and any(m.type=='ARMATURE' for m in o.modifiers)],key=lambda o:len(o.data.vertices))
-A={'girdle':'Bone_023','upper':'Bone_022','elbow':'Bone_021','wrist_helper':'Bone_020','hand_helper':'Bone_019'}
+A={'girdle':'Bone_023','upper':'Bone_022','elbow':'Bone_021','wrist_helper':'Bone_020','hand_helper':'Bone_019','head':'Bone_034'}
 for n in A.values(): arm.pose.bones[n].rotation_mode='XYZ'
 def set_rot(role, xyz):
  p=arm.pose.bones[A[role]]; p.rotation_euler=tuple(math.radians(v) for v in xyz)
-def key(frame, upper=(0,0,0), elbow=(0,0,0), wrist=(0,0,0), hand=(0,0,0), girdle=(0,0,0)):
- set_rot('girdle',girdle); set_rot('upper',upper); set_rot('elbow',elbow); set_rot('wrist_helper',wrist); set_rot('hand_helper',hand)
- for role in A:
-  arm.pose.bones[A[role]].keyframe_insert('rotation_euler',frame=frame)
+def key(frame, upper=(0,0,0), elbow=(0,0,0), wrist=(0,0,0), hand=(0,0,0), girdle=(0,0,0), head=(0,0,0)):
+ set_rot('girdle',girdle); set_rot('upper',upper); set_rot('elbow',elbow); set_rot('wrist_helper',wrist); set_rot('hand_helper',hand); set_rot('head',head)
+ for role in A: arm.pose.bones[A[role]].keyframe_insert('rotation_euler',frame=frame)
 # Verified from orthographic wireframe + visible-rig diagnostics:
 # character-forward in the imported Blender scene is -Y.
-# Bone_022: negative X moves the upper-arm chain forward; Y is axial roll; Z also changes depth but adds strong lateral/vertical displacement.
-# Bone_021: negative X bends the distal arm forward; Y is axial roll; Z is mainly the secondary bend plane.
-# Therefore this reach is deliberately X-dominant, with Y locked to zero and only tiny Z shaping corrections.
-# Shoulder/girdle and distal helper bones stay effectively neutral so the test isolates the two proven controls.
+# Bone_022: negative X moves the upper-arm chain forward; Y is axial roll.
+# Bone_021: negative X bends the distal arm forward; Y is axial roll.
+# Previous -34/-22 test moved in the correct direction but did not reach far enough, so this pass extends both proven controls.
+# Y remains locked at zero to avoid the earlier palm-up/beckoning twist. Z is only a small clearance correction.
+# Bone_034 head map from earlier diagnostic: Y turns left/right; negative Y turns Limijoy toward his right/reaching hand.
 key(1)
-key(9,  upper=(-8,0,0),  elbow=(-4,0,0))
-key(19, upper=(-22,0,-2), elbow=(-12,0,1))
-key(27, upper=(-34,0,-3), elbow=(-22,0,2))
-key(35, upper=(-34,0,-3), elbow=(-20,0,2))
-key(43, upper=(-12,0,-1), elbow=(-6,0,0))
+key(9,  upper=(-10,0,0), elbow=(-5,0,0), head=(0,-2,0))
+key(19, upper=(-28,0,-2), elbow=(-15,0,1), head=(0,-5,0))
+key(27, upper=(-44,0,-3), elbow=(-27,0,2), head=(0,-8,0))
+key(35, upper=(-48,0,-3), elbow=(-30,0,2), head=(0,-10,0))
+key(43, upper=(-18,0,-1), elbow=(-9,0,0), head=(0,-4,0))
 key(53)
 for fc in arm.animation_data.action.fcurves:
  for kp in fc.keyframe_points: kp.interpolation='BEZIER'
@@ -34,7 +34,6 @@ pts=[main.matrix_world@Vector(c) for c in main.bound_box]; mn=Vector((min(p.x fo
 bpy.ops.mesh.primitive_plane_add(size=ext*6,location=(cen.x,cen.y,mn.z)); gm=bpy.data.materials.new('Ground');gm.diffuse_color=(.055,.055,.07,1);bpy.context.object.data.materials.append(gm)
 eng={x.identifier for x in bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items}; s.render.engine='BLENDER_EEVEE_NEXT' if 'BLENDER_EEVEE_NEXT' in eng else ('BLENDER_EEVEE' if 'BLENDER_EEVEE' in eng else 'BLENDER_WORKBENCH');s.render.resolution_x=s.render.resolution_y=384;s.render.resolution_percentage=100;s.render.image_settings.file_format='PNG';s.render.filepath=str(FR/'frame_')
 if s.world is None:s.world=bpy.data.worlds.new('World');s.world.color=(.035,.035,.045)
-# 3/4 camera retained so forward depth and elbow shape are both visible.
 cl=cen+Vector((ext*2.15,-ext*3.2,ext*.35));bpy.ops.object.camera_add(location=cl);cam=bpy.context.object;cam.data.type='ORTHO';cam.data.ortho_scale=ext*1.42;cam.rotation_euler=(cen-cam.location).to_track_quat('-Z','Y').to_euler();s.camera=cam
 for loc,en,sz in [(cen+Vector((ext*2,-ext*2,ext*2)),900,ext*2),(cen+Vector((-ext*2,-ext,ext)),450,ext*2.5)]:
  bpy.ops.object.light_add(type='AREA',location=loc);l=bpy.context.object;l.data.energy=en;l.data.size=sz;l.rotation_euler=(cen-l.location).to_track_quat('-Z','Y').to_euler()
