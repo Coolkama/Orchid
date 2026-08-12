@@ -7,21 +7,24 @@ if not model.is_absolute(): model=ROOT/model
 bpy.ops.wm.read_factory_settings(use_empty=True); bpy.ops.import_scene.gltf(filepath=str(model)); s=bpy.context.scene
 arm=next(o for o in s.objects if o.type=='ARMATURE'); main=max([o for o in s.objects if o.type=='MESH' and any(m.type=='ARMATURE' for m in o.modifiers)],key=lambda o:len(o.data.vertices))
 L={'hip':'Bone_006','thigh':'Bone_005','knee':'Bone_004','ankle':'Bone_003','toe':'Bone_002'};R={'hip':'Bone_011','thigh':'Bone_010','knee':'Bone_009','ankle':'Bone_008','toe':'Bone_007'}
-for n in list(L.values())+list(R.values()): arm.pose.bones[n].rotation_mode='XYZ'
-# Corrected cycle: retain the successful hip/knee rhythm, reverse fore/aft sense,
-# and use ankle + terminal toe bones by gait phase rather than holding toes up.
-def pose(f, lhip,lth,lknee,lank,ltoe, rhip,rth,rknee,rank,rtoe, bodyz=0):
+TORSO=['Bone_014','Bone_015']; NECK='Bone_034'
+for n in list(L.values())+list(R.values())+TORSO+[NECK]: arm.pose.bones[n].rotation_mode='XYZ'
+# Preserve the validated leg cycle and layer subtle body response on top.
+def pose(f, lhip,lth,lknee,lank,ltoe, rhip,rth,rknee,rank,rtoe, bodyz=0, roll=0, yaw=0, neckroll=0):
  vals=[(L['hip'],lhip),(L['thigh'],lth),(L['knee'],lknee),(L['ankle'],lank),(L['toe'],ltoe),(R['hip'],rhip),(R['thigh'],rth),(R['knee'],rknee),(R['ankle'],rank),(R['toe'],rtoe)]
  for n,d in vals:
   p=arm.pose.bones[n];p.rotation_euler.x=math.radians(d);p.keyframe_insert('rotation_euler',frame=f)
+ # Small counter-shift through torso. Both torso controls visibly affect the body, so split the motion between them.
+ for i,n in enumerate(TORSO):
+  p=arm.pose.bones[n];p.rotation_euler.z=math.radians(roll*(0.6 if i==0 else 0.4));p.rotation_euler.y=math.radians(yaw*(0.6 if i==0 else 0.4));p.keyframe_insert('rotation_euler',frame=f)
+ # Neck/head support counter-rolls slightly to stabilise the face while the body walks.
+ p=arm.pose.bones[NECK];p.rotation_euler.z=math.radians(neckroll);p.keyframe_insert('rotation_euler',frame=f)
  arm.location.z=bodyz;arm.keyframe_insert('location',frame=f)
-# contact: leading foot nearly level; trailing foot begins toe-off
-# passing: swing foot clears with knee flex, ankle/toe relaxed rather than permanently dorsiflexed
-pose(1,  -8,-10, 2, 2, 0,   8,10,18,-3,-7, 0)
-pose(9,   2,  4, 4, 0, 0,  -4,-7,25, 2, 3, 0.018)
-pose(17,  8, 10,18,-3,-7,  -8,-10,2, 2, 0, 0)
-pose(25, -4, -7,25, 2, 3,   2, 4, 4, 0, 0, 0.018)
-pose(33, -8,-10, 2, 2, 0,   8,10,18,-3,-7, 0)
+pose(1,  -8,-10,2,2,0,   8,10,18,-3,-7, 0,     -1.8,-0.8, 0.9)
+pose(9,   2,4,4,0,0,    -4,-7,25,2,3,   0.018,  1.2, 0.4,-0.6)
+pose(17,  8,10,18,-3,-7,-8,-10,2,2,0,   0,      1.8, 0.8,-0.9)
+pose(25, -4,-7,25,2,3,   2,4,4,0,0,      0.018, -1.2,-0.4, 0.6)
+pose(33, -8,-10,2,2,0,   8,10,18,-3,-7,  0,     -1.8,-0.8, 0.9)
 for fc in arm.animation_data.action.fcurves:
  for kp in fc.keyframe_points: kp.interpolation='BEZIER'
 s.frame_start=1;s.frame_end=32;s.render.fps=24
