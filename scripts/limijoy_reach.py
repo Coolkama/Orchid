@@ -7,29 +7,38 @@ if not model.is_absolute(): model=ROOT/model
 bpy.ops.wm.read_factory_settings(use_empty=True); bpy.ops.import_scene.gltf(filepath=str(model)); s=bpy.context.scene
 arm=next(o for o in s.objects if o.type=='ARMATURE'); main=max([o for o in s.objects if o.type=='MESH' and any(m.type=='ARMATURE' for m in o.modifiers)],key=lambda o:len(o.data.vertices))
 A={'girdle':'Bone_023','upper':'Bone_022','forearm':'Bone_021','wrist':'Bone_020','hand':'Bone_019'}
-for n in A.values(): arm.pose.bones[n].rotation_mode='XYZ'
-def key(f, girdle=(0,0,0), upper=(0,0,0), forearm=(0,0,0), wrist=(0,0,0), hand=(0,0,0)):
- for role,rot in [('girdle',girdle),('upper',upper),('forearm',forearm),('wrist',wrist),('hand',hand)]:
-  p=arm.pose.bones[A[role]]; p.rotation_euler=tuple(math.radians(v) for v in rot); p.keyframe_insert('rotation_euler',frame=f)
-# The earlier global semantic assumption works for the torso/legs, but the arm bones are rolled in local space.
-# Rig inspection shows Bone_022 local Y lies almost entirely in the body's lateral/vertical plane, making Y the
-# practical forward/back swing axis for this upper arm. Keep the girdle neutral and use Y for reach depth.
-key(1)
-key(9,  upper=(0,8,0),   forearm=(0,-5,0))
-key(19, upper=(0,24,1),  forearm=(0,-14,-1), wrist=(0,3,0), hand=(0,-1,0))
-key(27, upper=(0,28,1),  forearm=(0,-17,-1), wrist=(0,4,0), hand=(0,-2,0))
-key(39, upper=(0,7,0),   forearm=(0,-4,0))
-key(49)
+for n in A.values(): arm.pose.bones[n].rotation_mode='QUATERNION'
+# Meshy has rolled the arm bones, so do not guess Euler axes. Aim each bone's actual rest-space
+# head->tail direction toward an explicit armature/world-space direction instead.
+def aim(role, direction, frame):
+ p=arm.pose.bones[A[role]]
+ rest=(p.bone.tail_local-p.bone.head_local).normalized()
+ target=Vector(direction).normalized()
+ q=rest.rotation_difference(target)
+ p.rotation_quaternion=q
+ p.keyframe_insert('rotation_quaternion',frame=frame)
+def neutral(frame):
+ for role in A:
+  p=arm.pose.bones[A[role]];p.rotation_quaternion=(1,0,0,0);p.keyframe_insert('rotation_quaternion',frame=frame)
+# First world-space reach test. Preserve the shoulder girdle; progressively point the upper arm
+# forward and slightly upward. The forearm is aimed a little more forward/down to create a soft elbow.
+# We infer character-forward from the model/camera setup as -Y; lateral is +X and up is +Z.
+neutral(1)
+aim('upper',(0.82,-0.20,-0.05),9); aim('forearm',(0.75,-0.32,-0.18),9)
+aim('upper',(0.52,-0.82,0.12),19); aim('forearm',(0.34,-0.91,-0.20),19); aim('wrist',(0.28,-0.95,-0.10),19)
+aim('upper',(0.38,-0.91,0.14),27); aim('forearm',(0.22,-0.96,-0.18),27); aim('wrist',(0.18,-0.98,-0.08),27)
+aim('upper',(0.78,-0.28,-0.04),39); aim('forearm',(0.70,-0.38,-0.20),39)
+neutral(49)
 for fc in arm.animation_data.action.fcurves:
  for kp in fc.keyframe_points: kp.interpolation='BEZIER'
 s.frame_start=1;s.frame_end=49;s.render.fps=24
 pts=[main.matrix_world@Vector(c) for c in main.bound_box]; mn=Vector((min(p.x for p in pts),min(p.y for p in pts),min(p.z for p in pts))); mx=Vector((max(p.x for p in pts),max(p.y for p in pts),max(p.z for p in pts))); cen=(mn+mx)*.5; ext=max(mx-mn)
 bpy.ops.mesh.primitive_plane_add(size=ext*6,location=(cen.x,cen.y,mn.z)); gm=bpy.data.materials.new('Ground'); gm.diffuse_color=(.055,.055,.07,1); bpy.context.object.data.materials.append(gm)
-eng={x.identifier for x in bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items}; s.render.engine='BLENDER_EEVEE_NEXT' if 'BLENDER_EEVEE_NEXT' in eng else ('BLENDER_EEVEE' if 'BLENDER_EEVEE' in eng else 'BLENDER_WORKBENCH'); s.render.resolution_x=s.render.resolution_y=384; s.render.resolution_percentage=100; s.render.image_settings.file_format='PNG'; s.render.filepath=str(FR/'frame_')
-if s.world is None:s.world=bpy.data.worlds.new('World'); s.world.color=(.035,.035,.045)
-cl=cen+Vector((ext*2.15,-ext*3.2,ext*.35)); bpy.ops.object.camera_add(location=cl); cam=bpy.context.object; cam.data.type='ORTHO'; cam.data.ortho_scale=ext*1.42; cam.rotation_euler=(cen-cam.location).to_track_quat('-Z','Y').to_euler(); s.camera=cam
+eng={x.identifier for x in bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items}; s.render.engine='BLENDER_EEVEE_NEXT' if 'BLENDER_EEVEE_NEXT' in eng else ('BLENDER_EEVEE' if 'BLENDER_EEVEE' in eng else 'BLENDER_WORKBENCH'); s.render.resolution_x=s.render.resolution_y=384;s.render.resolution_percentage=100;s.render.image_settings.file_format='PNG';s.render.filepath=str(FR/'frame_')
+if s.world is None:s.world=bpy.data.worlds.new('World');s.world.color=(.035,.035,.045)
+cl=cen+Vector((ext*2.15,-ext*3.2,ext*.35));bpy.ops.object.camera_add(location=cl);cam=bpy.context.object;cam.data.type='ORTHO';cam.data.ortho_scale=ext*1.42;cam.rotation_euler=(cen-cam.location).to_track_quat('-Z','Y').to_euler();s.camera=cam
 for loc,en,sz in [(cen+Vector((ext*2,-ext*2,ext*2)),900,ext*2),(cen+Vector((-ext*2,-ext,ext)),450,ext*2.5)]:
- bpy.ops.object.light_add(type='AREA',location=loc); l=bpy.context.object; l.data.energy=en; l.data.size=sz; l.rotation_euler=(cen-l.location).to_track_quat('-Z','Y').to_euler()
+ bpy.ops.object.light_add(type='AREA',location=loc);l=bpy.context.object;l.data.energy=en;l.data.size=sz;l.rotation_euler=(cen-l.location).to_track_quat('-Z','Y').to_euler()
 bpy.ops.render.render(animation=True)
 subprocess.run(['ffmpeg','-y','-framerate','24','-i',str(FR/'frame_%04d.png'),'-c:v','libx264','-pix_fmt','yuv420p',str(OUT/'preview.mp4')],check=True)
 subprocess.run(['ffmpeg','-y','-framerate','24','-i',str(FR/'frame_%04d.png'),'-vf','fps=12,scale=384:-1:flags=lanczos','-loop','0',str(OUT/'preview.gif')],check=True)
