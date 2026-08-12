@@ -6,20 +6,19 @@ a=next((x for x in sys.argv if x.startswith('--model=')),None); model=Path(a.spl
 if not model.is_absolute(): model=ROOT/model
 bpy.ops.wm.read_factory_settings(use_empty=True); bpy.ops.import_scene.gltf(filepath=str(model)); s=bpy.context.scene
 arm=next(o for o in s.objects if o.type=='ARMATURE'); main=max([o for o in s.objects if o.type=='MESH' and any(m.type=='ARMATURE' for m in o.modifiers)],key=lambda o:len(o.data.vertices))
-# Refined after first reach review: Bone_023 behaves more like the shoulder girdle/clavicle.
-# Keep it neutral and drive the arm primarily from Bone_022 downward.
 A={'girdle':'Bone_023','upper':'Bone_022','forearm':'Bone_021','wrist':'Bone_020','hand':'Bone_019'}
 for n in A.values(): arm.pose.bones[n].rotation_mode='XYZ'
 def key(f, girdle=(0,0,0), upper=(0,0,0), forearm=(0,0,0), wrist=(0,0,0), hand=(0,0,0)):
  for role,rot in [('girdle',girdle),('upper',upper),('forearm',forearm),('wrist',wrist),('hand',hand)]:
   p=arm.pose.bones[A[role]]; p.rotation_euler=tuple(math.radians(v) for v in rot); p.keyframe_insert('rotation_euler',frame=f)
-# Keep the same assumed semantic rotation convention, but remove the large girdle rotation that dropped the shoulder.
-# Also reduce Y/Z components so the arm does not cut so far into the torso.
+# The earlier global semantic assumption works for the torso/legs, but the arm bones are rolled in local space.
+# Rig inspection shows Bone_022 local Y lies almost entirely in the body's lateral/vertical plane, making Y the
+# practical forward/back swing axis for this upper arm. Keep the girdle neutral and use Y for reach depth.
 key(1)
-key(9,  upper=(-8,1,0),  forearm=(5,0,0))
-key(19, upper=(-24,2,-1), forearm=(14,0,1), wrist=(-3,0,0), hand=(1,0,0))
-key(27, upper=(-26,2,-1), forearm=(16,0,1), wrist=(-4,0,0), hand=(2,0,0))
-key(39, upper=(-7,1,0),  forearm=(4,0,0))
+key(9,  upper=(0,8,0),   forearm=(0,-5,0))
+key(19, upper=(0,24,1),  forearm=(0,-14,-1), wrist=(0,3,0), hand=(0,-1,0))
+key(27, upper=(0,28,1),  forearm=(0,-17,-1), wrist=(0,4,0), hand=(0,-2,0))
+key(39, upper=(0,7,0),   forearm=(0,-4,0))
 key(49)
 for fc in arm.animation_data.action.fcurves:
  for kp in fc.keyframe_points: kp.interpolation='BEZIER'
