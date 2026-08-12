@@ -9,22 +9,25 @@ arm=next(o for o in s.objects if o.type=='ARMATURE'); main=max([o for o in s.obj
 L={'hip':'Bone_006','thigh':'Bone_005','knee':'Bone_004','ankle':'Bone_003','toe':'Bone_002'};R={'hip':'Bone_011','thigh':'Bone_010','knee':'Bone_009','ankle':'Bone_008','toe':'Bone_007'}
 TORSO=['Bone_014','Bone_015']; NECK='Bone_034'
 for n in list(L.values())+list(R.values())+TORSO+[NECK]: arm.pose.bones[n].rotation_mode='XYZ'
-# Preserve the validated leg cycle and layer subtle body response on top.
 def pose(f, lhip,lth,lknee,lank,ltoe, rhip,rth,rknee,rank,rtoe, bodyz=0, roll=0, yaw=0, neckroll=0):
  vals=[(L['hip'],lhip),(L['thigh'],lth),(L['knee'],lknee),(L['ankle'],lank),(L['toe'],ltoe),(R['hip'],rhip),(R['thigh'],rth),(R['knee'],rknee),(R['ankle'],rank),(R['toe'],rtoe)]
  for n,d in vals:
   p=arm.pose.bones[n];p.rotation_euler.x=math.radians(d);p.keyframe_insert('rotation_euler',frame=f)
- # Small counter-shift through torso. Both torso controls visibly affect the body, so split the motion between them.
  for i,n in enumerate(TORSO):
-  p=arm.pose.bones[n];p.rotation_euler.z=math.radians(roll*(0.6 if i==0 else 0.4));p.rotation_euler.y=math.radians(yaw*(0.6 if i==0 else 0.4));p.keyframe_insert('rotation_euler',frame=f)
- # Neck/head support counter-rolls slightly to stabilise the face while the body walks.
+  p=arm.pose.bones[n];p.rotation_euler.z=math.radians(roll*(.6 if i==0 else .4));p.rotation_euler.y=math.radians(yaw*(.6 if i==0 else .4));p.keyframe_insert('rotation_euler',frame=f)
  p=arm.pose.bones[NECK];p.rotation_euler.z=math.radians(neckroll);p.keyframe_insert('rotation_euler',frame=f)
  arm.location.z=bodyz;arm.keyframe_insert('location',frame=f)
-pose(1,  -8,-10,2,2,0,   8,10,18,-3,-7, 0,     -1.8,-0.8, 0.9)
-pose(9,   2,4,4,0,0,    -4,-7,25,2,3,   0.018,  1.2, 0.4,-0.6)
-pose(17,  8,10,18,-3,-7,-8,-10,2,2,0,   0,      1.8, 0.8,-0.9)
-pose(25, -4,-7,25,2,3,   2,4,4,0,0,      0.018, -1.2,-0.4, 0.6)
-pose(33, -8,-10,2,2,0,   8,10,18,-3,-7,  0,     -1.8,-0.8, 0.9)
+# More stance keys than the previous cycle. During each support half-cycle the loaded foot
+# settles flat and stays extended to the floor while the opposite foot is allowed to clear it.
+pose(1,  -8,-10,2,2,0,    8,10,18,-3,-7, 0,      -1.8,-.8,.9)   # L heel contact / R toe-off
+pose(5,  -5,-7,5,0,0,     5,7,22,-1,-4, 0.006,   -.7,-.3,.35)  # L settles
+pose(9,   0,1,8,-1,0,    -4,-7,25,2,3,   0.010,    1.2,.4,-.6)  # L flat stance, R passing
+pose(13,  5,7,13,-2,-3,  -6,-9,12,1,1,   0.006,    1.6,.7,-.8)  # L heel rise / R descends
+pose(17,  8,10,18,-3,-7, -8,-10,2,2,0,   0,        1.8,.8,-.9)  # R heel contact / L toe-off
+pose(21,  5,7,22,-1,-4,  -5,-7,5,0,0,    0.006,     .7,.3,-.35) # R settles
+pose(25, -4,-7,25,2,3,    0,1,8,-1,0,    0.010,   -1.2,-.4,.6)  # R flat stance, L passing
+pose(29, -6,-9,12,1,1,    5,7,13,-2,-3,  0.006,   -1.6,-.7,.8)  # R heel rise / L descends
+pose(33, -8,-10,2,2,0,    8,10,18,-3,-7, 0,       -1.8,-.8,.9)
 for fc in arm.animation_data.action.fcurves:
  for kp in fc.keyframe_points: kp.interpolation='BEZIER'
 s.frame_start=1;s.frame_end=32;s.render.fps=24
