@@ -8,34 +8,31 @@ bpy.ops.wm.read_factory_settings(use_empty=True); bpy.ops.import_scene.gltf(file
 arm=next(o for o in s.objects if o.type=='ARMATURE'); main=max([o for o in s.objects if o.type=='MESH' and any(m.type=='ARMATURE' for m in o.modifiers)],key=lambda o:len(o.data.vertices))
 A={'girdle':'Bone_023','upper':'Bone_022','forearm':'Bone_021','wrist':'Bone_020','hand':'Bone_019'}
 for n in A.values(): arm.pose.bones[n].rotation_mode='QUATERNION'
-# Meshy has rolled the arm bones, so do not guess Euler axes. Aim each bone's actual rest-space
-# head->tail direction toward an explicit armature/world-space direction instead.
 def aim(role, direction, frame):
  p=arm.pose.bones[A[role]]
  rest=(p.bone.tail_local-p.bone.head_local).normalized()
  target=Vector(direction).normalized()
- q=rest.rotation_difference(target)
- p.rotation_quaternion=q
+ p.rotation_quaternion=rest.rotation_difference(target)
  p.keyframe_insert('rotation_quaternion',frame=frame)
 def neutral(frame):
  for role in A:
-  p=arm.pose.bones[A[role]];p.rotation_quaternion=(1,0,0,0);p.keyframe_insert('rotation_quaternion',frame=frame)
-# First world-space reach test. Preserve the shoulder girdle; progressively point the upper arm
-# forward and slightly upward. The forearm is aimed a little more forward/down to create a soft elbow.
-# We infer character-forward from the model/camera setup as -Y; lateral is +X and up is +Z.
+  p=arm.pose.bones[A[role]]; p.rotation_quaternion=(1,0,0,0); p.keyframe_insert('rotation_quaternion',frame=frame)
+# Coordinate diagnostic based on Meshy's documented rigging convention: the character should face +Z.
+# Only Bone_022 is moved. Elbow, wrist, hand, torso and shoulder girdle stay neutral so the result
+# answers one question cleanly: does aiming the upper arm toward +Z make it physically point forward?
 neutral(1)
-aim('upper',(0.82,-0.20,-0.05),9); aim('forearm',(0.75,-0.32,-0.18),9)
-aim('upper',(0.52,-0.82,0.12),19); aim('forearm',(0.34,-0.91,-0.20),19); aim('wrist',(0.28,-0.95,-0.10),19)
-aim('upper',(0.38,-0.91,0.14),27); aim('forearm',(0.22,-0.96,-0.18),27); aim('wrist',(0.18,-0.98,-0.08),27)
-aim('upper',(0.78,-0.28,-0.04),39); aim('forearm',(0.70,-0.38,-0.20),39)
+aim('upper',(0.65,0.0,0.76),9)   # transition from the arm's side toward +Z
+for f in (17,25,33): aim('upper',(0.0,0.0,1.0),f)
+aim('upper',(0.65,0.0,0.76),41)
 neutral(49)
 for fc in arm.animation_data.action.fcurves:
  for kp in fc.keyframe_points: kp.interpolation='BEZIER'
 s.frame_start=1;s.frame_end=49;s.render.fps=24
 pts=[main.matrix_world@Vector(c) for c in main.bound_box]; mn=Vector((min(p.x for p in pts),min(p.y for p in pts),min(p.z for p in pts))); mx=Vector((max(p.x for p in pts),max(p.y for p in pts),max(p.z for p in pts))); cen=(mn+mx)*.5; ext=max(mx-mn)
-bpy.ops.mesh.primitive_plane_add(size=ext*6,location=(cen.x,cen.y,mn.z)); gm=bpy.data.materials.new('Ground'); gm.diffuse_color=(.055,.055,.07,1); bpy.context.object.data.materials.append(gm)
-eng={x.identifier for x in bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items}; s.render.engine='BLENDER_EEVEE_NEXT' if 'BLENDER_EEVEE_NEXT' in eng else ('BLENDER_EEVEE' if 'BLENDER_EEVEE' in eng else 'BLENDER_WORKBENCH'); s.render.resolution_x=s.render.resolution_y=384;s.render.resolution_percentage=100;s.render.image_settings.file_format='PNG';s.render.filepath=str(FR/'frame_')
+bpy.ops.mesh.primitive_plane_add(size=ext*6,location=(cen.x,cen.y,mn.z)); gm=bpy.data.materials.new('Ground');gm.diffuse_color=(.055,.055,.07,1);bpy.context.object.data.materials.append(gm)
+eng={x.identifier for x in bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items}; s.render.engine='BLENDER_EEVEE_NEXT' if 'BLENDER_EEVEE_NEXT' in eng else ('BLENDER_EEVEE' if 'BLENDER_EEVEE' in eng else 'BLENDER_WORKBENCH');s.render.resolution_x=s.render.resolution_y=384;s.render.resolution_percentage=100;s.render.image_settings.file_format='PNG';s.render.filepath=str(FR/'frame_')
 if s.world is None:s.world=bpy.data.worlds.new('World');s.world.color=(.035,.035,.045)
+# Keep a 3/4 view so forward depth is visible.
 cl=cen+Vector((ext*2.15,-ext*3.2,ext*.35));bpy.ops.object.camera_add(location=cl);cam=bpy.context.object;cam.data.type='ORTHO';cam.data.ortho_scale=ext*1.42;cam.rotation_euler=(cen-cam.location).to_track_quat('-Z','Y').to_euler();s.camera=cam
 for loc,en,sz in [(cen+Vector((ext*2,-ext*2,ext*2)),900,ext*2),(cen+Vector((-ext*2,-ext,ext)),450,ext*2.5)]:
  bpy.ops.object.light_add(type='AREA',location=loc);l=bpy.context.object;l.data.energy=en;l.data.size=sz;l.rotation_euler=(cen-l.location).to_track_quat('-Z','Y').to_euler()
