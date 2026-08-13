@@ -35,14 +35,17 @@ def set_camera(view):
  loc={'front':cen+Vector((0,-ext*4,0)),'side':cen+Vector((ext*4,0,0))}[view];cam.location=loc;cam.rotation_euler=(cen-loc).to_track_quat('-Z','Y').to_euler()
 def render(name,view):
  make_bone_overlay();set_camera(view);s.render.filepath=str(OUT/f'{name}_{view}.png');bpy.ops.render.render(write_still=True)
-# Shoulder-joint-only test. Bone_023 is the right shoulder/girdle root identified from the prior arm map.
-# Nothing else rotates. Render neutral plus one isolated +90-degree rotation on X, Y and Z, from true front and true side.
+# Shoulder-joint-only test. Bone_023 only; all other arm bones remain at zero.
+# For each local axis, test the cardinal 90 and 180 degree positions separately from true front and true side.
+# Neutral is included as the common reference. No compound rotations are used.
 shoulder='Bone_023'; axis_index={'X':0,'Y':1,'Z':2}; report={'bone':shoulder,'tests':{}}
 reset(); bpy.context.view_layer.update(); p=arm.pose.bones[shoulder]
-report['neutral']={'head':list(p.head),'tail':list(p.tail)}
+report['neutral']={'head':list(p.head),'tail':list(p.tail),'direction':list((p.tail-p.head).normalized())}
 for view in ['front','side']: render('shoulder_neutral',view)
 for axis,idx in axis_index.items():
- reset(); arm.pose.bones[shoulder].rotation_euler[idx]=math.radians(90); bpy.context.view_layer.update(); p=arm.pose.bones[shoulder]
- report['tests'][axis]={'degrees':90,'head':list(p.head),'tail':list(p.tail),'direction':list((p.tail-p.head).normalized())}
- for view in ['front','side']: render(f'shoulder_{axis}_+090',view)
-(OUT/'axis_report.json').write_text(json.dumps({'purpose':'Bone_023 shoulder-joint-only wireframe diagnostic: neutral and isolated +90 degree X/Y/Z rotations, front and side views; no other bone rotations','result':report},indent=2))
+ report['tests'][axis]={}
+ for deg in [90,180]:
+  reset(); arm.pose.bones[shoulder].rotation_euler[idx]=math.radians(deg); bpy.context.view_layer.update(); p=arm.pose.bones[shoulder]
+  report['tests'][axis][str(deg)]={'degrees':deg,'head':list(p.head),'tail':list(p.tail),'direction':list((p.tail-p.head).normalized())}
+  for view in ['front','side']: render(f'shoulder_{axis}_+{deg:03d}',view)
+(OUT/'axis_report.json').write_text(json.dumps({'purpose':'Bone_023 shoulder-only wireframe diagnostic: neutral plus isolated +90 and +180 degree rotations on each X/Y/Z axis, true front and side; all other bone rotations zero','result':report},indent=2))
