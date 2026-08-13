@@ -2,7 +2,7 @@ name: Limijoy reach
 on:
   pull_request:
     branches: [main]
-    paths: ['assets/models/**','scripts/limijoy_reach.py','.github/workflows/limijoy-reach.yml']
+    paths: ['assets/models/**','scripts/limijoy_semantic_reach.py','.github/workflows/limijoy-reach.yml']
   workflow_dispatch:
 jobs:
   render:
@@ -15,7 +15,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y blender python3-numpy ffmpeg libegl1 libgl1 libglx-mesa0 libopengl0 mesa-utils
       - name: Render reach
-        run: blender --background --python-exit-code 1 --python scripts/limijoy_reach.py -- --model=assets/models/glimmerkin.glb
+        run: blender --background --python-exit-code 1 --python scripts/limijoy_semantic_reach.py -- --model=assets/models/glimmerkin.glb
       - name: Upload preview only
         uses: actions/upload-artifact@v4
         with:
