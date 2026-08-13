@@ -13,25 +13,30 @@ def set_rot(role, xyz):
 def key(frame, upper=(0,0,0), elbow=(0,0,0), wrist=(0,0,0), hand=(0,0,0), girdle=(0,0,0), head=(0,0,0)):
  set_rot('girdle',girdle); set_rot('upper',upper); set_rot('elbow',elbow); set_rot('wrist_helper',wrist); set_rot('hand_helper',hand); set_rot('head',head)
  for role in A: arm.pose.bones[A[role]].keyframe_insert('rotation_euler',frame=frame)
-# Calibrate elevation as a full sweep rather than guessing one horizontal value.
-# Keep the best-known forward reach values fixed: upper X=-48, elbow X=+10, and all Y=0.
-# Sweep Bone_022 Z from the current forward pose toward an overhead pose in even steps.
-# The visually horizontal arm should lie somewhere between the forward/down start and straight-up end;
-# because these are local Euler rotations the true visual halfway point need not be exactly half the Z angle.
+# Extended calibration from horizontal toward overhead.
+# Established useful reference: upper X=-48, elbow X=+10, Bone_022 Z=-90 gives roughly horizontal reach.
+# Test Z=-120,-150,-180 to find the overhead endpoint.
+# Palm orientation is now deliberately included: use forearm/hand-chain Y roll most strongly around the horizontal pose
+# to turn the palm inward toward a held/reached object, then fade that roll back toward zero by -180 so that,
+# when the arm is overhead, the same nominal 'palm down' orientation should present approximately forward.
+# We use Bone_021 Y for this roll because Bone_021 is the distal/forearm control and changes palm orientation with less shoulder disturbance.
 key(1)
 key(9,  upper=(-24,0,0), elbow=(5,0,0), head=(0,-4,0))
-key(17, upper=(-48,0,0),   elbow=(10,0,0), head=(0,-10,0))
-key(25, upper=(-48,0,-15), elbow=(10,0,0), head=(0,-10,0))
-key(33, upper=(-48,0,-30), elbow=(10,0,0), head=(0,-10,0))
-key(41, upper=(-48,0,-45), elbow=(10,0,0), head=(0,-10,0))
-key(49, upper=(-48,0,-60), elbow=(10,0,0), head=(0,-10,0))
-key(57, upper=(-48,0,-75), elbow=(10,0,0), head=(0,-10,0))
-key(65, upper=(-48,0,-90), elbow=(10,0,0), head=(0,-10,0))
-key(73, upper=(-24,0,0), elbow=(5,0,0), head=(0,-4,0))
-key(81)
+# Horizontal reference: inward palm roll candidate.
+key(17, upper=(-48,0,-90),  elbow=(10,28,0), head=(0,-10,0))
+key(25, upper=(-48,0,-90),  elbow=(10,28,0), head=(0,-10,0))
+# Continue elevation while progressively unwinding the palm roll.
+key(33, upper=(-48,0,-120), elbow=(10,20,0), head=(0,-8,0))
+key(41, upper=(-48,0,-120), elbow=(10,20,0), head=(0,-8,0))
+key(49, upper=(-48,0,-150), elbow=(10,10,0), head=(0,-5,0))
+key(57, upper=(-48,0,-150), elbow=(10,10,0), head=(0,-5,0))
+key(65, upper=(-48,0,-180), elbow=(10,0,0), head=(0,0,0))
+key(73, upper=(-48,0,-180), elbow=(10,0,0), head=(0,0,0))
+key(81, upper=(-24,0,-60), elbow=(5,8,0), head=(0,-4,0))
+key(89)
 for fc in arm.animation_data.action.fcurves:
  for kp in fc.keyframe_points: kp.interpolation='CONSTANT'
-s.frame_start=1;s.frame_end=81;s.render.fps=24
+s.frame_start=1;s.frame_end=89;s.render.fps=24
 pts=[main.matrix_world@Vector(c) for c in main.bound_box]; mn=Vector((min(p.x for p in pts),min(p.y for p in pts),min(p.z for p in pts))); mx=Vector((max(p.x for p in pts),max(p.y for p in pts),max(p.z for p in pts))); cen=(mn+mx)*.5; ext=max(mx-mn)
 bpy.ops.mesh.primitive_plane_add(size=ext*6,location=(cen.x,cen.y,mn.z)); gm=bpy.data.materials.new('Ground');gm.diffuse_color=(.055,.055,.07,1);bpy.context.object.data.materials.append(gm)
 eng={x.identifier for x in bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items}; s.render.engine='BLENDER_EEVEE_NEXT' if 'BLENDER_EEVEE_NEXT' in eng else ('BLENDER_EEVEE' if 'BLENDER_EEVEE' in eng else 'BLENDER_WORKBENCH');s.render.resolution_x=s.render.resolution_y=384;s.render.resolution_percentage=100;s.render.image_settings.file_format='PNG';s.render.filepath=str(FR/'frame_')
