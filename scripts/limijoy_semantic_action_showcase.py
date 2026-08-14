@@ -103,16 +103,16 @@ shoulder_centre = actions.shoulder_centre()
 # Off-centre targets make automatic side choice, head turn, and torso follow easy
 # to judge.  Props only visualise intent; they are not part of the controller.
 reach_target = (
-    shoulder_centre
-    + actions.forward * (length * 0.70)
-    + actions.right * (length * 0.55)
-    + actions.up * (length * 0.26)
+    actions.reference_shoulders["right"]
+    + actions.forward * (length * 0.72)
+    + actions.right * (length * 0.22)
+    + actions.up * (length * 0.18)
 )
 point_target = (
-    shoulder_centre
-    + actions.forward * (length * 0.68)
-    - actions.right * (length * 0.58)
-    + actions.up * (length * 0.22)
+    actions.reference_shoulders["left"]
+    + actions.forward * (length * 0.70)
+    - actions.right * (length * 0.25)
+    + actions.up * (length * 0.16)
 )
 carry_centre = (
     shoulder_centre
