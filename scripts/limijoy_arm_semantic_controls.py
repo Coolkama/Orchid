@@ -209,7 +209,7 @@ class LimijoyArmSemanticControls:
         # the hand-forward axis, leaving a stable palm-normal reference without
         # baking a Meshy Euler sign into the controller.
         wrist_world_rotation = self._pose_bone_world_rotation(self.wrist)
-        inward_world = Vector((-self.side_sign, 0.0, 0.0))
+        inward_world = self._character_direction((-self.side_sign, 0.0, 0.0))
         inward_local = wrist_world_rotation.inverted() @ inward_world
         self.palm_normal_local = _first_valid_projection(
             (inward_local, Vector((1.0, 0.0, 0.0)), Vector((0.0, 0.0, 1.0))),
@@ -241,6 +241,15 @@ class LimijoyArmSemanticControls:
         result.normalize()
         return result
 
+    def _character_direction(self, direction: Iterable[float] | Vector) -> Vector:
+        """Convert an imported-model direction into the armature's world frame."""
+
+        result = self.armature.matrix_world.to_quaternion() @ _normalised(
+            direction,
+            "character direction",
+        )
+        return result.normalized()
+
     def _bone_head_world(self, pose_bone: bpy.types.PoseBone) -> Vector:
         return self.armature.matrix_world @ pose_bone.head
 
@@ -250,10 +259,44 @@ class LimijoyArmSemanticControls:
     def _bone_length_world(self, pose_bone: bpy.types.PoseBone) -> float:
         return (self._bone_tail_world(pose_bone) - self._bone_head_world(pose_bone)).length
 
+    def shoulder_position(self) -> Vector:
+        """Return the live shoulder position after any parent/body controls."""
+
+        return self._bone_head_world(self.upper)
+
+    def hand_anchor_position(self) -> Vector:
+        """Return the live wrist/palm anchor controlled by the two-bone IK chain."""
+
+        return self._bone_head_world(self.wrist)
+
+    def neutral_hand_position(self) -> Vector:
+        """Return this arm's neutral hand anchor in the current body pose."""
+
+        influence = self.ik.influence
+        self.ik.influence = 0.0
+        bpy.context.view_layer.update()
+        result = self._bone_tail_world(self.elbow)
+        self.ik.influence = influence
+        bpy.context.view_layer.update()
+        return result
+
+    def clamp_target(self, position: Iterable[float] | Vector, margin: float = 0.96) -> Vector:
+        """Keep a requested target inside the portable two-bone reach envelope."""
+
+        if not 0.0 < margin <= 1.0:
+            raise ValueError("margin must be greater than zero and no more than one")
+        target = Vector(position)
+        shoulder = self.shoulder_position()
+        offset = target - shoulder
+        maximum = self.chain_length * margin
+        if offset.length > maximum:
+            return shoulder + offset.normalized() * maximum
+        return target
+
     def palm_direction_for_mode(self, mode: str) -> Vector:
         if mode not in PALM_MODES:
             raise ValueError(f"Unsupported palm mode {mode!r}; expected one of {PALM_MODES}")
-        return {
+        local_direction = {
             "inward": Vector((-self.side_sign, 0.0, 0.0)),
             "outward": Vector((self.side_sign, 0.0, 0.0)),
             "up": Vector((0.0, 0.0, 1.0)),
@@ -261,36 +304,39 @@ class LimijoyArmSemanticControls:
             "forward": Vector((0.0, -1.0, 0.0)),
             "backward": Vector((0.0, 1.0, 0.0)),
         }[mode]
+        return self._character_direction(local_direction)
 
     def elbow_direction_for_mode(self, mode: str) -> Vector:
         if mode not in ELBOW_MODES:
             raise ValueError(f"Unsupported elbow mode {mode!r}; expected one of {ELBOW_MODES}")
-        return {
+        local_direction = {
             "outward": Vector((self.side_sign, 0.0, 0.0)),
             "neutral": Vector((0.0, 0.0, -1.0)),
             "inward": Vector((-self.side_sign, 0.0, 0.0)),
         }[mode]
+        return self._character_direction(local_direction)
 
     def _pole_position(self, hand_position: Vector, elbow_mode: str) -> Vector:
-        reach_axis = _normalised(hand_position - self.rest_shoulder, "reach direction")
+        shoulder = self.shoulder_position()
+        reach_axis = _normalised(hand_position - shoulder, "reach direction")
         requested = self.elbow_direction_for_mode(elbow_mode)
         pole_direction = _first_valid_projection(
             (
                 requested,
-                Vector((0.0, 0.0, -1.0)),
-                Vector((self.side_sign, 0.0, 0.0)),
-                Vector((0.0, 1.0, 0.0)),
+                self._character_direction((0.0, 0.0, -1.0)),
+                self._character_direction((self.side_sign, 0.0, 0.0)),
+                self._character_direction((0.0, 1.0, 0.0)),
             ),
             reach_axis,
             "elbow pole direction",
         )
-        midpoint = self.rest_shoulder.lerp(hand_position, 0.45)
+        midpoint = shoulder.lerp(hand_position, 0.45)
         return midpoint + pole_direction * self.chain_length * 0.8
 
     def _desired_hand_forward(self, palm_direction: Vector, hand_position: Vector) -> Vector:
         current_rotation = self._pose_bone_world_rotation(self.wrist)
         current_forward = current_rotation @ self.hand_forward_local
-        reach_direction = hand_position - self.rest_shoulder
+        reach_direction = hand_position - self.shoulder_position()
 
         # Preserve the current/reach-aligned hand direction where possible.
         # When the palm points along the reach axis (forward/backward), use world
@@ -299,9 +345,9 @@ class LimijoyArmSemanticControls:
             (
                 current_forward,
                 reach_direction,
-                Vector((0.0, 0.0, 1.0)),
-                Vector((-self.side_sign, 0.0, 0.0)),
-                Vector((0.0, 1.0, 0.0)),
+                self._character_direction((0.0, 0.0, 1.0)),
+                self._character_direction((-self.side_sign, 0.0, 0.0)),
+                self._character_direction((0.0, 1.0, 0.0)),
             ),
             palm_direction,
             "hand-forward direction",
@@ -344,11 +390,28 @@ class LimijoyArmSemanticControls:
         self.ik.influence = 0.0
         for pose_bone in (self.girdle, self.upper, self.elbow, self.wrist, self.hand):
             pose_bone.matrix_basis = self._rest_basis[pose_bone.name].copy()
-        self.hand_target.location = self.rest_hand_target
-        self.elbow_pole.location = self.rest_shoulder
-        self.palm_target.location = self.rest_hand_target
+        bpy.context.view_layer.update()
+        neutral_hand = self._bone_tail_world(self.elbow)
+        shoulder = self.shoulder_position()
+        self.hand_target.location = neutral_hand
+        self.elbow_pole.location = shoulder
+        self.palm_target.location = neutral_hand
         self.palm_target.rotation_quaternion = Quaternion()
         bpy.context.view_layer.update()
+
+    def release(self, frame: Optional[int] = None) -> None:
+        """Return to inherited neutral and key a clean IK hand-off when requested."""
+
+        if frame is not None:
+            self.scene.frame_set(frame)
+        self.reset_pose()
+        if frame is not None:
+            self.hand_target.keyframe_insert("location", frame=frame)
+            self.elbow_pole.keyframe_insert("location", frame=frame)
+            self.wrist.keyframe_insert("rotation_quaternion", frame=frame)
+            self.palm_target.keyframe_insert("location", frame=frame)
+            self.palm_target.keyframe_insert("rotation_quaternion", frame=frame)
+            self.ik.keyframe_insert("influence", frame=frame)
 
     def reach_to(
         self,
