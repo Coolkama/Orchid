@@ -8,6 +8,7 @@ This file is the durable handoff for continuing Limijoy development in a fresh C
 - Working branch: `glimmerkin-inspection-pipeline`
 - Open PR: #2
 - Latest verified movement commit: `0b4c8d2` — shoulder-relative semantic action targets
+- Latest handoff commit before the Android integration checkpoint: `27c65d2`
 - Main character asset: `assets/models/glimmerkin.glb`
 - Character/app name: **Limijoy**. Older filenames may still use “Glimmerkin”.
 - Prefer direct **GitHub Actions run links** for render results. Sandbox download links expire too quickly and should not be the primary handoff.
@@ -284,17 +285,31 @@ The substantially complete baked walk remains authoritative. Procedural walking 
 
 Leaves and other secondary parts should use spring/secondary-motion controls rather than IK. Facial expressions and blinking should use semantic face states rather than the skeletal arm controller.
 
-## Next phase — personality and in-app rendering
+## Android runtime integration checkpoint
 
-The movement foundation is complete enough to leave bone calibration and begin product integration.
+Product integration is now active in `Coolkama/Limijoy` on branch
+`glimmerkin-runtime-rendering` (draft PR #14).
 
-Recommended order:
+Completed in the Android app:
 
-1. use Orchid only for model/action calibration and move runtime integration into the Limijoy Android repository;
-2. render `glimmerkin.glb` in-app and establish skeleton/action playback in both full-screen and mini-pet modes against one persistent pet state;
-3. port the portable two-bone IK, pole, palm-frame quaternion, gaze, and reach-envelope maths to the runtime renderer;
-4. connect local personality/state logic to semantic intents such as `lookAt`, `reachFor`, `wave`, and `carry`—no LLM or internet required for ordinary behaviour;
-5. add semantic face states/blinking and spring motion for leaves after the model is visibly running in the app.
+1. `glimmerkin.glb` renders through SceneView in both the full activity and the draggable mini overlay;
+2. both modes consume one shared `PetRuntime` state and presentation;
+3. on-device framing and transparency passed for both modes;
+4. the mini character overlapping the activity is intentional user placement, not a layout defect;
+5. the first live skeletal slice ports Orchid's bounded gaze distribution to torso `Bone_015`, neck `Bone_034`, and head `Bone_033` for `PetMotionIntent.LookAround`;
+6. full and mini renderers use the same frame clock so the semantic gaze remains in phase;
+7. Android Build #98 passed unit tests and APK packaging at commit `10e48cf`:
+   https://github.com/Coolkama/Limijoy/actions/runs/31791231075
+
+The gaze unit suite verifies Orchid's exact yaw/pitch/body-follow limits and curiosity-energy scaling. The next immediate gate is on-device visual acceptance of build #98 while the debug summary reads `Behaviour: Observe` and `Motion: LookAround`.
+
+After that device gate, continue the runtime port in increasing complexity:
+
+1. semantic wave using the bilateral arm controls;
+2. live reach/point using two-bone IK, elbow pole, palm-frame quaternion, live shoulder position, and reach-envelope clamping;
+3. remaining play/carry/push and whole-body coordination;
+4. semantic face states/blinking and spring motion for leaves;
+5. deepen the local personality/state-to-intent layer before adding any optional AI behaviour selection.
 
 ## Earlier reach observations worth retaining
 
@@ -368,4 +383,4 @@ Important commits from this phase:
 - When a render completes, provide the direct GitHub Actions run URL.
 - Do not claim a render is ready until workflow status is checked.
 - Avoid rebuilding knowledge that is already recorded in `docs/LIMIJOY_RIG_MAP.md` and this handoff.
-- Bilateral parity, head/torso coordination, and the initial semantic action catalogue are verified. The next success criterion is visible in-app rendering driven by local personality state.
+- Bilateral parity, head/torso coordination, and the initial semantic action catalogue are verified in Orchid. Full/mini in-app rendering and the first personality-driven gaze slice are implemented; the next success criterion is on-device visual acceptance of `LookAround`, followed by the bilateral arm runtime port.
