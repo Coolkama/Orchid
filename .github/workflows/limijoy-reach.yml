@@ -2,7 +2,11 @@ name: Limijoy reach
 on:
   pull_request:
     branches: [main]
-    paths: ['assets/models/**','scripts/limijoy_semantic_reach.py','.github/workflows/limijoy-reach.yml']
+    paths:
+      - 'assets/models/**'
+      - 'scripts/limijoy_arm_semantic_controls.py'
+      - 'scripts/limijoy_semantic_reach.py'
+      - '.github/workflows/limijoy-reach.yml'
   workflow_dispatch:
 jobs:
   render:
@@ -14,25 +18,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y blender python3-numpy ffmpeg libegl1 libgl1 libglx-mesa0 libopengl0 mesa-utils
-      - name: Apply palm calibration
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('scripts/limijoy_semantic_reach.py')
-          s = p.read_text()
-          s = s.replace('(9,-8),(19,-24),(29,-38),(39,-38),(49,-10)', '(9,8),(19,24),(29,38),(39,38),(49,10)')
-          s = s.replace('(9,-3),(19,-8),(29,-12),(39,-12),(49,-4)', '(9,3),(19,8),(29,12),(39,12),(49,4)')
-          s = s.replace('(19,2),(29,4),(39,4),(49,1)', '(19,-2),(29,-4),(39,-4),(49,-1)')
-          p.write_text(s)
-          PY
       - name: Render reach
         run: blender --background --python-exit-code 1 --python scripts/limijoy_semantic_reach.py -- --model=assets/models/glimmerkin.glb
-      - name: Upload preview only
+      - name: Upload semantic reach preview
         uses: actions/upload-artifact@v4
         with:
           name: limijoy-reach-preview
           path: |
             output/limijoy-reach/preview.mp4
             output/limijoy-reach/preview.gif
+            output/limijoy-reach/reach_report.json
           retention-days: 7
           if-no-files-found: error

@@ -1,53 +1,204 @@
-import bpy, math, sys, subprocess
+"""Animate a standard semantic reach using the reusable Limijoy arm controller."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from dataclasses import asdict
 from pathlib import Path
+
+import bpy
 from mathutils import Vector
 
-ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / 'output' / 'limijoy-reach'
-FR = OUT / 'frames'
-FR.mkdir(parents=True, exist_ok=True)
 
-arg = next((x for x in sys.argv if x.startswith('--model=')), None)
-model = Path(arg.split('=',1)[1]) if arg else ROOT / 'assets/models/glimmerkin.glb'
-if not model.is_absolute(): model = ROOT / model
-bpy.ops.wm.read_factory_settings(use_empty=True); bpy.ops.import_scene.gltf(filepath=str(model))
-scene=bpy.context.scene; arm=next(o for o in scene.objects if o.type=='ARMATURE'); main=max([o for o in scene.objects if o.type=='MESH' and any(m.type=='ARMATURE' for m in o.modifiers)],key=lambda o:len(o.data.vertices))
-bones={'girdle':'Bone_023','upper':'Bone_022','elbow':'Bone_021','wrist':'Bone_020','hand':'Bone_019','head':'Bone_034'}
-for name in bones.values(): arm.pose.bones[name].rotation_mode='XYZ'; arm.pose.bones[name].rotation_euler=(0,0,0)
-if arm.animation_data and arm.animation_data.action: arm.animation_data.action=None
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from limijoy_arm_semantic_controls import LimijoyArmSemanticControls  # noqa: E402
+
+
+OUTPUT = ROOT / "output" / "limijoy-reach"
+FRAMES = OUTPUT / "frames"
+FRAMES.mkdir(parents=True, exist_ok=True)
+
+model_argument = next((value for value in sys.argv if value.startswith("--model=")), None)
+model_path = (
+    Path(model_argument.split("=", 1)[1])
+    if model_argument
+    else ROOT / "assets" / "models" / "glimmerkin.glb"
+)
+if not model_path.is_absolute():
+    model_path = ROOT / model_path
+
+bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.ops.import_scene.gltf(filepath=str(model_path))
+scene = bpy.context.scene
+armature = next(obj for obj in scene.objects if obj.type == "ARMATURE")
+main_mesh = max(
+    [
+        obj
+        for obj in scene.objects
+        if obj.type == "MESH" and any(modifier.type == "ARMATURE" for modifier in obj.modifiers)
+    ],
+    key=lambda obj: len(obj.data.vertices),
+)
+
+if armature.animation_data and armature.animation_data.action:
+    armature.animation_data.action = None
+for pose_bone in armature.pose.bones:
+    pose_bone.matrix_basis.identity()
 bpy.context.view_layer.update()
-pts=[main.matrix_world@Vector(c) for c in main.bound_box]; mn=Vector((min(p.x for p in pts),min(p.y for p in pts),min(p.z for p in pts))); mx=Vector((max(p.x for p in pts),max(p.y for p in pts),max(p.z for p in pts))); cen=(mn+mx)*.5; ext=max(mx-mn)
-elbow=arm.pose.bones[bones['elbow']]; rest_tip=arm.matrix_world@elbow.tail.copy(); shoulder=arm.matrix_world@arm.pose.bones[bones['upper']].head.copy()
-target_end=Vector((shoulder.x,shoulder.y-ext*.52,shoulder.z+ext*.02)); pole_pos=Vector((shoulder.x+ext*.48,shoulder.y-ext*.16,shoulder.z-ext*.12))
-def add_empty(name,loc):
- bpy.ops.object.empty_add(type='PLAIN_AXES',location=loc); o=bpy.context.object;o.name=name;o.empty_display_size=ext*.06;return o
-target=add_empty('ReachTarget',rest_tip);pole=add_empty('ReachPole',pole_pos)
-c=elbow.constraints.new('IK');c.name='SemanticReachIK';c.target=target;c.pole_target=pole;c.chain_count=2;c.use_tail=True;c.iterations=64
-def kt(f,loc): target.location=loc;target.keyframe_insert('location',frame=f)
-def kr(name,f,xyz):
- p=arm.pose.bones[name];p.rotation_euler=tuple(math.radians(v) for v in xyz);p.keyframe_insert('rotation_euler',frame=f)
-for f,t in [(1,0),(9,.25),(19,.72),(29,1),(39,1),(49,.30),(59,0)]: kt(f,rest_tip.lerp(target_end,t))
-# Palm attitude: the previous pass rolled the distal chain toward palm-up.
-# Use the mapped elbow/forearm Y roll in the opposite direction so the palm turns inward toward the body/target.
-# Wrist and hand helpers only add small finishing corrections.
-for f,v in [(1,0),(9,-8),(19,-24),(29,-38),(39,-38),(49,-10),(59,0)]: kr(bones['elbow'],f,(0,v,0))
-for f,v in [(1,0),(9,-3),(19,-8),(29,-12),(39,-12),(49,-4),(59,0)]: kr(bones['wrist'],f,(0,v,0))
-for f,v in [(1,0),(19,2),(29,4),(39,4),(49,1),(59,0)]: kr(bones['hand'],f,(0,v,0))
-for f,v in [(1,0),(9,-2),(19,-5),(29,-8),(39,-8),(49,-3),(59,0)]: kr(bones['head'],f,(0,v,0))
-if target.animation_data and target.animation_data.action:
- for fc in target.animation_data.action.fcurves:
-  for kp in fc.keyframe_points: kp.interpolation='BEZIER'
-if arm.animation_data and arm.animation_data.action:
- for fc in arm.animation_data.action.fcurves:
-  for kp in fc.keyframe_points: kp.interpolation='BEZIER'
-scene.frame_start=1;scene.frame_end=59;scene.render.fps=24
-bpy.ops.mesh.primitive_plane_add(size=ext*6,location=(cen.x,cen.y,mn.z));gm=bpy.data.materials.new('Ground');gm.diffuse_color=(.055,.055,.07,1);bpy.context.object.data.materials.append(gm)
-eng={x.identifier for x in bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items};scene.render.engine='BLENDER_EEVEE_NEXT' if 'BLENDER_EEVEE_NEXT' in eng else ('BLENDER_EEVEE' if 'BLENDER_EEVEE' in eng else 'BLENDER_WORKBENCH');scene.render.resolution_x=scene.render.resolution_y=384;scene.render.resolution_percentage=100;scene.render.image_settings.file_format='PNG';scene.render.filepath=str(FR/'frame_')
-if scene.world is None: scene.world=bpy.data.worlds.new('World')
-scene.world.color=(.035,.035,.045)
-cl=cen+Vector((ext*2.15,-ext*3.2,ext*.35));bpy.ops.object.camera_add(location=cl);cam=bpy.context.object;cam.data.type='ORTHO';cam.data.ortho_scale=ext*1.42;cam.rotation_euler=(cen-cam.location).to_track_quat('-Z','Y').to_euler();scene.camera=cam
-for loc,en,sz in [(cen+Vector((ext*2,-ext*2,ext*2)),900,ext*2),(cen+Vector((-ext*2,-ext,ext)),450,ext*2.5)]:
- bpy.ops.object.light_add(type='AREA',location=loc);l=bpy.context.object;l.data.energy=en;l.data.size=sz;l.rotation_euler=(cen-l.location).to_track_quat('-Z','Y').to_euler()
+
+points = [main_mesh.matrix_world @ Vector(corner) for corner in main_mesh.bound_box]
+minimum = Vector(tuple(min(point[axis] for point in points) for axis in range(3)))
+maximum = Vector(tuple(max(point[axis] for point in points) for axis in range(3)))
+centre = (minimum + maximum) * 0.5
+extent = max(maximum - minimum)
+
+controller = LimijoyArmSemanticControls(
+    armature,
+    side="right",
+    control_size=extent * 0.045,
+)
+
+# A reachable target at shoulder height. Limijoy forward is world -Y and the
+# hand target represents the wrist/palm anchor at the end of the two-bone IK chain.
+target_end = controller.rest_shoulder + Vector(
+    (0.0, -controller.chain_length * 0.90, controller.chain_length * 0.04)
+)
+
+reach_keys = (
+    (1, 0.00),
+    (9, 0.25),
+    (19, 0.72),
+    (29, 1.00),
+    (39, 1.00),
+    (49, 0.30),
+    (59, 0.00),
+)
+reach_results = []
+for frame, amount in reach_keys:
+    hand_position = controller.rest_hand_target.lerp(target_end, amount)
+    result = controller.reach_to(
+        hand_position,
+        palm_mode="inward",
+        elbow_mode="outward",
+        frame=frame,
+    )
+    reach_results.append({"frame": frame, **asdict(result)})
+
+head = armature.pose.bones["Bone_034"]
+head.rotation_mode = "XYZ"
+head.matrix_basis.identity()
+for frame, degrees in ((1, 0), (9, -2), (19, -5), (29, -8), (39, -8), (49, -3), (59, 0)):
+    head.rotation_euler = (0.0, degrees * 0.017453292519943295, 0.0)
+    head.keyframe_insert("rotation_euler", frame=frame)
+
+for controlled_object in (controller.hand_target, controller.elbow_pole):
+    if controlled_object.animation_data and controlled_object.animation_data.action:
+        for curve in controlled_object.animation_data.action.fcurves:
+            for point in curve.keyframe_points:
+                point.interpolation = "BEZIER"
+
+if armature.animation_data and armature.animation_data.action:
+    for curve in armature.animation_data.action.fcurves:
+        for point in curve.keyframe_points:
+            point.interpolation = "BEZIER"
+
+scene.frame_start = 1
+scene.frame_end = 59
+scene.render.fps = 24
+
+bpy.ops.mesh.primitive_plane_add(size=extent * 6.0, location=(centre.x, centre.y, minimum.z))
+ground_material = bpy.data.materials.new("Ground")
+ground_material.diffuse_color = (0.055, 0.055, 0.07, 1.0)
+bpy.context.object.data.materials.append(ground_material)
+
+engines = {
+    item.identifier
+    for item in bpy.types.RenderSettings.bl_rna.properties["engine"].enum_items
+}
+scene.render.engine = (
+    "BLENDER_EEVEE_NEXT"
+    if "BLENDER_EEVEE_NEXT" in engines
+    else "BLENDER_EEVEE"
+    if "BLENDER_EEVEE" in engines
+    else "BLENDER_WORKBENCH"
+)
+scene.render.resolution_x = 384
+scene.render.resolution_y = 384
+scene.render.resolution_percentage = 100
+scene.render.image_settings.file_format = "PNG"
+scene.render.filepath = str(FRAMES / "frame_")
+if scene.world is None:
+    scene.world = bpy.data.worlds.new("World")
+scene.world.color = (0.035, 0.035, 0.045)
+
+camera_location = centre + Vector((extent * 2.15, -extent * 3.2, extent * 0.35))
+bpy.ops.object.camera_add(location=camera_location)
+camera = bpy.context.object
+camera.data.type = "ORTHO"
+camera.data.ortho_scale = extent * 1.42
+camera.rotation_euler = (centre - camera.location).to_track_quat("-Z", "Y").to_euler()
+scene.camera = camera
+
+for location, energy, size in (
+    (centre + Vector((extent * 2.0, -extent * 2.0, extent * 2.0)), 900, extent * 2.0),
+    (centre + Vector((-extent * 2.0, -extent, extent)), 450, extent * 2.5),
+):
+    bpy.ops.object.light_add(type="AREA", location=location)
+    light = bpy.context.object
+    light.data.energy = energy
+    light.data.size = size
+    light.rotation_euler = (centre - light.location).to_track_quat("-Z", "Y").to_euler()
+
 bpy.ops.render.render(animation=True)
-subprocess.run(['ffmpeg','-y','-framerate','24','-i',str(FR/'frame_%04d.png'),'-c:v','libx264','-pix_fmt','yuv420p',str(OUT/'preview.mp4')],check=True)
-subprocess.run(['ffmpeg','-y','-framerate','24','-i',str(FR/'frame_%04d.png'),'-vf','fps=12,scale=384:-1:flags=lanczos','-loop','0',str(OUT/'preview.gif')],check=True)
+subprocess.run(
+    (
+        "ffmpeg",
+        "-y",
+        "-framerate",
+        "24",
+        "-i",
+        str(FRAMES / "frame_%04d.png"),
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        str(OUTPUT / "preview.mp4"),
+    ),
+    check=True,
+)
+subprocess.run(
+    (
+        "ffmpeg",
+        "-y",
+        "-framerate",
+        "24",
+        "-i",
+        str(FRAMES / "frame_%04d.png"),
+        "-vf",
+        "fps=12,scale=384:-1:flags=lanczos",
+        "-loop",
+        "0",
+        str(OUTPUT / "preview.gif"),
+    ),
+    check=True,
+)
+
+(OUTPUT / "reach_report.json").write_text(
+    json.dumps(
+        {
+            "controller": "LimijoyArmSemanticControls",
+            "palm_mode": "inward",
+            "elbow_mode": "outward",
+            "target_end": list(target_end),
+            "keyframes": reach_results,
+        },
+        indent=2,
+    ),
+    encoding="utf-8",
+)
