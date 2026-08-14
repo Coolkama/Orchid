@@ -7,6 +7,7 @@ This file is the durable handoff for continuing Limijoy development in a fresh C
 - Repository: `Coolkama/Orchid`
 - Working branch: `glimmerkin-inspection-pipeline`
 - Open PR: #2
+- Latest verified remote commit: `10de5ff7` — semantic arm orientation controls
 - Main character asset: `assets/models/glimmerkin.glb`
 - Character/app name: **Limijoy**. Older filenames may still use “Glimmerkin”.
 - Prefer direct **GitHub Actions run links** for render results. Sandbox download links expire too quickly and should not be the primary handoff.
@@ -107,24 +108,32 @@ Do not confuse these with local pose-bone axes.
 
 ## Current reach work
 
-A target-based reach script exists at:
+A reusable semantic controller and target-based reach script now exist at:
 
+- `scripts/limijoy_arm_semantic_controls.py`
 - `scripts/limijoy_semantic_reach.py`
+- `scripts/limijoy_palm_orientation_sheet.py`
 
-This was a useful improvement because it uses IK for the **hand position** instead of manually guessing upper-arm/elbow Euler rotations.
+The controller uses IK for the **hand position**, a pole target for the **elbow direction**, and an orthonormal vector frame/quaternion for the **palm direction**. Palm orientation is no longer adjusted with Meshy Euler values.
 
-However, palm orientation was still being adjusted by direct local Euler roll. That is the remaining weak point and should now be replaced rather than tuned further.
+For the right wrist control, the neutral calibration measured:
+
+- hand-forward reference: local `(0, 1, 0)`
+- palm-normal reference: local `(-0.8320505, 0, -0.5546999)`
+
+The palm-normal value is derived once from the neutral inward-facing hand and the actual wrist frame rather than being used as a guessed Euler sign.
 
 Current workflow:
 
 - `.github/workflows/limijoy-reach.yml`
+- `.github/workflows/limijoy-palm-orientation-sheet.yml`
 
-Important temporary detail: because direct GitHub script writes were being falsely blocked by an OpenAI safety classifier, the workflow currently contains an **`Apply palm calibration` text-replacement step** that reverses some palm-roll signs at render time. This is a workaround, not final architecture. Remove it once the semantic orientation controller replaces the raw roll values.
+The temporary **`Apply palm calibration` text-replacement step has been removed**. The reach workflow now calls the semantic controller directly and contains no render-time sign replacement.
 
 Latest tested reach Action:
 
-- `Limijoy reach` run #25
-- https://github.com/Coolkama/Orchid/actions/runs/31728651128
+- `Limijoy reach` run #27
+- https://github.com/Coolkama/Orchid/actions/runs/31775846065
 
 User feedback on the reach sequence:
 
@@ -134,37 +143,19 @@ User feedback on the reach sequence:
 - The next test reversed the same amount.
 - Rather than continue sign/angle guessing, we decided to replace palm-angle tuning with a real orientation target.
 
-## Next task — do this first in the new session
+## Completed task — semantic arm controller
 
-Do **not** continue manually tuning the current palm Euler values.
+Do **not** return to manually tuning palm Euler values.
 
-Implement a semantic arm-control prototype, preferably as reusable code such as:
+The reusable controller now provides:
 
-- `scripts/limijoy_arm_semantic_controls.py`
-- `scripts/limijoy_palm_orientation_sheet.py`
-
-The arm controller should provide at least:
-
-- hand target
-- elbow pole
-- palm/orientation target
+- world-space hand target
+- outward, neutral, and inward elbow-pole modes
+- world-space palm/orientation target
 - `reach_to(position, palm_mode="inward", elbow_mode="outward")`
-- rest/reset pose helper
+- `reset_pose()` helper
 
-Palm modes to support:
-
-- inward
-- outward
-- up
-- down
-- forward
-- backward
-
-The key implementation goal is to determine the hand’s palm-normal/reference axes once, then use vector/quaternion orientation maths so semantic directions are independent of arbitrary Meshy Euler signs.
-
-## Next diagnostic — one run, many answers
-
-Instead of one render per guess, create one calibration/pose-sheet render using a fixed reach target and multiple palm orientations:
+Supported palm modes:
 
 - inward
 - outward
@@ -173,15 +164,51 @@ Instead of one render per guess, create one calibration/pose-sheet render using 
 - forward
 - backward
 
-Ideally combine these with elbow pole variants:
+The controller constructs local and desired world orthonormal frames, then maps between them with a quaternion. This makes the semantic directions independent of arbitrary Meshy Euler signs and also permits forward/backward palms, which cannot be produced by forearm roll alone.
+
+## Completed diagnostic — one run, many answers
+
+The new calibration workflow rendered all six palm orientations:
+
+- inward
+- outward
+- up
+- down
+- forward
+- backward
+
+It combined them with all three elbow-pole variants:
 
 - outward
 - neutral
 - inward
 
-Render front, side, and/or 3/4 views as useful. The purpose is to calibrate the control system in one GitHub Action instead of repeated commits and waits.
+Each of the 18 poses was rendered from front, side, and three-quarter views, producing 54 stills and three contact sheets in one run.
 
-Once the six cardinal palm orientations are correct, use **palm inward + elbow outward** for the standard horizontal reach.
+Verified orientation-sheet Action:
+
+- `Limijoy palm orientation sheet` run #1
+- https://github.com/Coolkama/Orchid/actions/runs/31775846079
+
+Measured results:
+
+- maximum hand-target error across the 18 still poses: `< 4.7e-6` model units
+- maximum palm angular error: `0°` at report precision
+- maximum hand-target error across the animated reach keys: `< 2.4e-5` model units
+- no quaternion flip was visible through the animated reach
+
+The standard horizontal reach now uses **palm inward + elbow outward**.
+
+## Next task after semantic arm validation
+
+First let the user review the new reach and orientation sheets. After visual acceptance, the recommended development order is:
+
+1. mirror and validate the same semantic controller for the left arm;
+2. add a small whole-body coordinator so `reachFor(target)` can combine arm reach with `lookAt(target)` and a modest torso turn/lean;
+3. build semantic arm actions such as point, wave, carry, push, and walking arm swing from target/orientation paths;
+4. preserve the substantially complete baked walk, adding procedural foot/ground correction only where dynamic terrain or precise steps require it.
+
+Leaves and other secondary parts should use spring/secondary-motion controls rather than IK. Facial expressions and blinking should use semantic face states rather than this skeletal arm controller.
 
 ## Earlier reach observations worth retaining
 
@@ -225,6 +252,10 @@ Measured `Bone_023` behaviour from 90°/180° cardinal tests:
   https://github.com/Coolkama/Orchid/actions/runs/31680543823
 - Latest target-based/reversed-palm reach run #25:
   https://github.com/Coolkama/Orchid/actions/runs/31728651128
+- Semantic palm orientation sheet run #1:
+  https://github.com/Coolkama/Orchid/actions/runs/31775846079
+- Semantic inward-palm reach run #27:
+  https://github.com/Coolkama/Orchid/actions/runs/31775846065
 
 Important commits from this phase:
 
@@ -234,6 +265,7 @@ Important commits from this phase:
 - `e1c0da66` — reach workflow switched to target-based script
 - `4a5c08d6` — attempted palm direction correction
 - `1fc3e5cc` — workflow workaround to reverse palm-roll signs at render time
+- `10de5ff7` — reusable hand/elbow/palm semantic controller and one-run orientation sheet
 
 ## Working method going forward
 
@@ -243,4 +275,4 @@ Important commits from this phase:
 - When a render completes, provide the direct GitHub Actions run URL.
 - Do not claim a render is ready until workflow status is checked.
 - Avoid rebuilding knowledge that is already recorded in `docs/LIMIJOY_RIG_MAP.md` and this handoff.
-- The immediate success criterion is not “perfect animation”; it is a reusable arm controller that makes future reaches, waves, carrying, pointing, and interaction substantially faster.
+- The reusable arm-controller success criterion has been met. The next criterion is visually accepted left/right parity plus head/torso coordination without exposing Meshy bones to the behaviour layer.

@@ -179,3 +179,29 @@ Because these bones do not visibly articulate individual fingers, they should no
 The main reason reaching took too long was treating small local-Euler changes as though they mapped directly to semantic world directions. The diagnostics show that the rest axes are already rotated and parent transforms alter descendant coordinate frames. Future animation work should therefore build a small library of calibrated semantic poses/controls (arm-down, horizontal-forward, overhead, palm-in, palm-forward, etc.) from these measured bones rather than repeatedly deriving them from raw Euler intuition.
 
 Diagnostic source: GitHub Actions `Limijoy arm diagnostic` run #22, generated from commit `39bc1cee`.
+
+## Semantic wrist-frame calibration
+
+Commit `10de5ff7` added `scripts/limijoy_arm_semantic_controls.py`, which places the existing Meshy rig behind a semantic hand/elbow/palm API.
+
+For the right wrist control (`Bone_020`), the neutral frame resolves to:
+
+- hand/finger-forward reference: local `(0, 1, 0)`
+- palm-normal reference: local `(-0.8320505, 0, -0.5546999)`
+
+The palm-normal reference is calculated from the neutral inward-facing palm in the actual wrist frame. It is not a manually selected Euler angle. For every requested palm mode, the controller:
+
+1. resolves the semantic direction in world space;
+2. selects a perpendicular hand-forward direction, using world up as the non-singular fallback for forward/backward palms;
+3. constructs matching local and world orthonormal frames;
+4. converts the frame mapping to a quaternion;
+5. applies the result at the wrist after the two-bone hand-position IK solve.
+
+Supported right-arm palm modes are inward, outward, up, down, forward, and backward. Supported elbow-pole modes are outward, neutral, and inward. Mirrored left-arm bone names are already mapped in the controller, but left-side mesh behaviour still requires a rendered parity check before being treated as calibrated.
+
+The first full pose sheet rendered all 18 palm/elbow combinations from three views. Its numeric report measured less than `4.7e-6` model units of hand-anchor error and `0°` of palm angular error at report precision. The corresponding standard reach held palm inward through the full motion without a visible quaternion flip.
+
+Verification sources:
+
+- Palm orientation sheet: https://github.com/Coolkama/Orchid/actions/runs/31775846079
+- Semantic inward-palm reach: https://github.com/Coolkama/Orchid/actions/runs/31775846065
