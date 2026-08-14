@@ -7,14 +7,16 @@ This file is the durable handoff for continuing Limijoy development in a fresh C
 - Repository: `Coolkama/Orchid`
 - Working branch: `glimmerkin-inspection-pipeline`
 - Open PR: #2
-- Latest verified remote commit: `10de5ff7` — semantic arm orientation controls
+- Latest verified movement commit: `0b4c8d2` — shoulder-relative semantic action targets
 - Main character asset: `assets/models/glimmerkin.glb`
 - Character/app name: **Limijoy**. Older filenames may still use “Glimmerkin”.
 - Prefer direct **GitHub Actions run links** for render results. Sandbox download links expire too quickly and should not be the primary handoff.
 
 ## High-level product direction
 
-Limijoy is a desktop pet that eventually needs to react procedurally to the mouse, screen content, toys, food, user actions, and AI-selected behaviours. The AI/behaviour layer should think in semantic actions such as:
+Limijoy is a persistent Android digital pet that eventually needs to react procedurally to touch, screen content, toys, food, user actions, and AI-selected behaviours. Full-screen and mini-pet modes should share one running pet state. Ordinary behaviours must remain local/offline: **pet first, AI second**.
+
+The local behaviour layer and optional AI should both think in semantic actions such as:
 
 - `lookAt(mouse)`
 - `reachFor(object)`
@@ -61,7 +63,7 @@ Blender is now treated as a **calibration and authoring environment**, not the f
 Target architecture:
 
 ```text
-AI / behaviour
+local pet behaviour / optional AI
     ↓
 semantic action, e.g. ReachFor(toy)
     ↓
@@ -132,8 +134,8 @@ The temporary **`Apply palm calibration` text-replacement step has been removed*
 
 Latest tested reach Action:
 
-- `Limijoy reach` run #27
-- https://github.com/Coolkama/Orchid/actions/runs/31775846065
+- `Limijoy reach` run #31
+- https://github.com/Coolkama/Orchid/actions/runs/31781898730
 
 User feedback on the reach sequence:
 
@@ -185,10 +187,10 @@ It combined them with all three elbow-pole variants:
 
 Each of the 18 poses was rendered from front, side, and three-quarter views, producing 54 stills and three contact sheets in one run.
 
-Verified orientation-sheet Action:
+Latest verified orientation-sheet Action:
 
-- `Limijoy palm orientation sheet` run #1
-- https://github.com/Coolkama/Orchid/actions/runs/31775846079
+- `Limijoy palm orientation sheet` run #5
+- https://github.com/Coolkama/Orchid/actions/runs/31781898717
 
 Measured results:
 
@@ -199,16 +201,100 @@ Measured results:
 
 The standard horizontal reach now uses **palm inward + elbow outward**.
 
-## Next task after semantic arm validation
+## Completed phase — bilateral and whole-body semantic actions
 
-First let the user review the new reach and orientation sheets. After visual acceptance, the recommended development order is:
+The user visually accepted the right-arm controller, then commits `8deefd5`, `a21cd27`, and `0b4c8d2` completed the planned movement foundation.
 
-1. mirror and validate the same semantic controller for the left arm;
-2. add a small whole-body coordinator so `reachFor(target)` can combine arm reach with `lookAt(target)` and a modest torso turn/lean;
-3. build semantic arm actions such as point, wave, carry, push, and walking arm swing from target/orientation paths;
-4. preserve the substantially complete baked walk, adding procedural foot/ground correction only where dynamic terrain or precise steps require it.
+New reusable modules:
 
-Leaves and other secondary parts should use spring/secondary-motion controls rather than IK. Facial expressions and blinking should use semantic face states rather than this skeletal arm controller.
+- `scripts/limijoy_body_semantic_controls.py`
+- `scripts/limijoy_semantic_actions.py`
+- `scripts/limijoy_left_arm_parity.py`
+- `scripts/limijoy_semantic_action_showcase.py`
+
+New validation workflows:
+
+- `.github/workflows/limijoy-left-arm-parity.yml`
+- `.github/workflows/limijoy-semantic-actions.yml`
+
+### Left-arm parity
+
+The controller is now rendered and measured bilaterally across all six palm modes and all three elbow modes. The left wrist neutral calibration is:
+
+- hand-forward reference: local `(0, 1, 0)`
+- palm-normal reference: local `(0.8000007, 0, -0.5999991)`
+
+Verified bilateral Action:
+
+- `Limijoy left-arm parity` run #3
+- https://github.com/Coolkama/Orchid/actions/runs/31781898747
+
+Measured across the 18 bilateral poses:
+
+- maximum hand-target error: `< 7.5e-6` model units
+- maximum mirrored hand-displacement difference: `< 1.9e-6` model units
+- maximum mirrored palm-direction difference: `< 0.000022°`
+
+### Whole-body coordinator
+
+`LimijoyBodySemanticControls.look_at(target)` uses bounded world/character-space quaternions internally, distributed across torso, neck, and head. The behaviour API does not expose the Meshy controls.
+
+Conservative hard bounds:
+
+- total yaw: `±35°`
+- total pitch: `±22°`
+- forward lean: `±5°`
+
+Individual actions use smaller strengths so gaze and torso motion remain secondary to the hand action. The final reach/point reel kept resolved pitch within about `13.5°`.
+
+The arm solver now reads the **live shoulder position** after body movement, rotates semantic directions through the armature world frame, clamps unreachable requests to a safe reach envelope, and can key a clean IK release back to inherited neutral.
+
+### Reusable semantic action layer
+
+`LimijoySemanticActions` now provides:
+
+- `reach_for(target, side="auto")`
+- `point(target, side="auto")`
+- `wave(side)`
+- `carry(centre)`
+- `push(centre)`
+- `walking_arm_swing()`
+
+`ArmIntent`, `PoseIntent`, and `animate_path()` are the general extension point. Picking up a stick, carrying food, moving branches, or play behaviours should add new target/orientation paths rather than another controller rewrite.
+
+Because the rig has no articulated fingers, `point` is intentionally a whole-arm indication. A future finger-rigged asset can refine the endpoint without changing the behaviour API.
+
+Final semantic-action reel:
+
+- `Limijoy semantic actions` run #3
+- https://github.com/Coolkama/Orchid/actions/runs/31781898771
+
+Measured across every authored action key:
+
+- maximum hand-target error: `< 2.7e-5` model units
+- maximum palm angular error: `0°` at report precision
+- right reach and left point required no reach-envelope clamping
+- no baked-walk source or leg control was edited
+
+The action data remains authored at 24 fps. CI samples the review reel at 12 fps to reduce render time without changing controller timing.
+
+### Walk policy
+
+The substantially complete baked walk remains authoritative. Procedural walking arm swing is an **optional arm-only overlay/fallback**. Procedural feet remain disabled until dynamic terrain or precise grounding requires them.
+
+Leaves and other secondary parts should use spring/secondary-motion controls rather than IK. Facial expressions and blinking should use semantic face states rather than the skeletal arm controller.
+
+## Next phase — personality and in-app rendering
+
+The movement foundation is complete enough to leave bone calibration and begin product integration.
+
+Recommended order:
+
+1. use Orchid only for model/action calibration and move runtime integration into the Limijoy Android repository;
+2. render `glimmerkin.glb` in-app and establish skeleton/action playback in both full-screen and mini-pet modes against one persistent pet state;
+3. port the portable two-bone IK, pole, palm-frame quaternion, gaze, and reach-envelope maths to the runtime renderer;
+4. connect local personality/state logic to semantic intents such as `lookAt`, `reachFor`, `wave`, and `carry`—no LLM or internet required for ordinary behaviour;
+5. add semantic face states/blinking and spring motion for leaves after the model is visibly running in the app.
 
 ## Earlier reach observations worth retaining
 
@@ -242,7 +328,7 @@ Measured `Bone_023` behaviour from 90°/180° cardinal tests:
 - The previous face implementation had an unwanted baked/open mouth plus an overlay mouth; the baked mouth needs to be removed/avoided.
 - Neutral should not look permanently open-mouthed/agape.
 - A blink diagnostic button was requested so visual glitches can be held long enough to screenshot.
-- Face work is not the current priority; semantic arm control is.
+- Face work now belongs to the upcoming personality phase, after the model is visibly running in the app.
 
 ## Key diagnostic/action references
 
@@ -256,6 +342,10 @@ Measured `Bone_023` behaviour from 90°/180° cardinal tests:
   https://github.com/Coolkama/Orchid/actions/runs/31775846079
 - Semantic inward-palm reach run #27:
   https://github.com/Coolkama/Orchid/actions/runs/31775846065
+- Final bilateral parity run #3:
+  https://github.com/Coolkama/Orchid/actions/runs/31781898747
+- Final semantic-action reel run #3:
+  https://github.com/Coolkama/Orchid/actions/runs/31781898771
 
 Important commits from this phase:
 
@@ -266,6 +356,9 @@ Important commits from this phase:
 - `4a5c08d6` — attempted palm direction correction
 - `1fc3e5cc` — workflow workaround to reverse palm-roll signs at render time
 - `10de5ff7` — reusable hand/elbow/palm semantic controller and one-run orientation sheet
+- `8deefd5` — bilateral calibration, bounded gaze/body controls, and reusable action paths
+- `a21cd27` — restrained gaze/carry presentation and faster CI review sampling
+- `0b4c8d2` — shoulder-relative reach/point targets
 
 ## Working method going forward
 
@@ -275,4 +368,4 @@ Important commits from this phase:
 - When a render completes, provide the direct GitHub Actions run URL.
 - Do not claim a render is ready until workflow status is checked.
 - Avoid rebuilding knowledge that is already recorded in `docs/LIMIJOY_RIG_MAP.md` and this handoff.
-- The reusable arm-controller success criterion has been met. The next criterion is visually accepted left/right parity plus head/torso coordination without exposing Meshy bones to the behaviour layer.
+- Bilateral parity, head/torso coordination, and the initial semantic action catalogue are verified. The next success criterion is visible in-app rendering driven by local personality state.

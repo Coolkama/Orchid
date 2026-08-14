@@ -184,10 +184,11 @@ Diagnostic source: GitHub Actions `Limijoy arm diagnostic` run #22, generated fr
 
 Commit `10de5ff7` added `scripts/limijoy_arm_semantic_controls.py`, which places the existing Meshy rig behind a semantic hand/elbow/palm API.
 
-For the right wrist control (`Bone_020`), the neutral frame resolves to:
+For the wrist controls, the neutral frames resolve to:
 
 - hand/finger-forward reference: local `(0, 1, 0)`
-- palm-normal reference: local `(-0.8320505, 0, -0.5546999)`
+- right `Bone_020` palm-normal reference: local `(-0.8320505, 0, -0.5546999)`
+- left `Bone_028` palm-normal reference: local `(0.8000007, 0, -0.5999991)`
 
 The palm-normal reference is calculated from the neutral inward-facing palm in the actual wrist frame. It is not a manually selected Euler angle. For every requested palm mode, the controller:
 
@@ -197,11 +198,41 @@ The palm-normal reference is calculated from the neutral inward-facing palm in t
 4. converts the frame mapping to a quaternion;
 5. applies the result at the wrist after the two-bone hand-position IK solve.
 
-Supported right-arm palm modes are inward, outward, up, down, forward, and backward. Supported elbow-pole modes are outward, neutral, and inward. Mirrored left-arm bone names are already mapped in the controller, but left-side mesh behaviour still requires a rendered parity check before being treated as calibrated.
+Supported bilateral palm modes are inward, outward, up, down, forward, and backward. Supported elbow-pole modes are outward, neutral, and inward. Semantic directions are rotated through the armature's world frame, and pole/reach calculations use the live shoulder position after any torso control.
 
 The first full pose sheet rendered all 18 palm/elbow combinations from three views. Its numeric report measured less than `4.7e-6` model units of hand-anchor error and `0°` of palm angular error at report precision. The corresponding standard reach held palm inward through the full motion without a visible quaternion flip.
+
+The bilateral parity sheet then rendered both arms together for all 18 combinations. Measured results:
+
+- right chain length: `0.2473983` model units
+- left chain length: `0.2524219` model units
+- maximum bilateral target error: `< 7.5e-6` model units
+- maximum mirrored hand-displacement difference: `< 1.9e-6` model units
+- maximum mirrored palm-direction difference: `< 0.000022°`
+
+Left/right mesh behaviour is therefore calibrated for the semantic modes above. Continue mirroring by semantic role, not by copying Euler signs.
+
+## Semantic head and torso map
+
+`scripts/limijoy_body_semantic_controls.py` hides the underlying body map behind `look_at(target)`:
+
+| Semantic role | Current Meshy control | Use |
+|---|---|---|
+| torso follow / lean | `Bone_015` | small yaw and forward weight only |
+| neck follow | `Bone_034` | secondary yaw/pitch |
+| head gaze | `Bone_033` | primary bounded yaw/pitch |
+
+The controller applies character/world-space quaternion deltas from neutral, in ancestor-to-descendant order, rather than exposing local Euler axes. Hard limits are `±35°` total yaw, `±22°` total pitch, and `±5°` forward lean. Individual actions deliberately request less so the head and torso remain secondary to the interaction.
+
+## Semantic action composition
+
+`scripts/limijoy_semantic_actions.py` composes both arms and the body controller through general `ArmIntent` and `PoseIntent` paths. The initial catalogue is reach, point, wave, carry, push, and optional walking arm swing. New object interactions should be expressed as additional target/palm/elbow/gaze paths.
+
+The walking arm path is an optional overlay/fallback only. The baked walk stays authoritative, and the action layer does not touch leg bones or replace the baked source.
 
 Verification sources:
 
 - Palm orientation sheet: https://github.com/Coolkama/Orchid/actions/runs/31775846079
 - Semantic inward-palm reach: https://github.com/Coolkama/Orchid/actions/runs/31775846065
+- Bilateral parity sheet: https://github.com/Coolkama/Orchid/actions/runs/31781898747
+- Semantic action reel: https://github.com/Coolkama/Orchid/actions/runs/31781898771
