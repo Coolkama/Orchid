@@ -293,25 +293,25 @@ class LimijoySemanticActions:
                     ),
                 ),
                 look_target=_tuple(target_vector),
-                gaze_strength=0.30,
-                body_follow=0.35,
-                forward_lean_degrees=0.8,
+                gaze_strength=0.18,
+                body_follow=0.25,
+                forward_lean_degrees=0.5,
             ),
             PoseIntent(
                 frame=start_frame + 24,
                 arms=(ArmIntent(resolved_side, _tuple(target_vector), palm_mode, elbow_mode),),
                 look_target=_tuple(target_vector),
-                gaze_strength=0.82,
-                body_follow=0.85,
-                forward_lean_degrees=2.4,
+                gaze_strength=0.32,
+                body_follow=0.55,
+                forward_lean_degrees=1.4,
             ),
             PoseIntent(
                 frame=start_frame + 34,
                 arms=(ArmIntent(resolved_side, _tuple(target_vector), palm_mode, elbow_mode),),
                 look_target=_tuple(target_vector),
-                gaze_strength=1.0,
-                body_follow=1.0,
-                forward_lean_degrees=2.8,
+                gaze_strength=0.38,
+                body_follow=0.65,
+                forward_lean_degrees=1.6,
             ),
         )
         return self.animate_path(
@@ -349,24 +349,24 @@ class LimijoySemanticActions:
                     ),
                 ),
                 look_target=_tuple(target_vector),
-                gaze_strength=0.40,
-                body_follow=0.35,
+                gaze_strength=0.20,
+                body_follow=0.25,
             ),
             PoseIntent(
                 frame=start_frame + 20,
                 arms=(ArmIntent(resolved_side, _tuple(target_vector), "down", "outward"),),
                 look_target=_tuple(target_vector),
-                gaze_strength=1.0,
-                body_follow=0.85,
-                forward_lean_degrees=1.2,
+                gaze_strength=0.38,
+                body_follow=0.60,
+                forward_lean_degrees=0.8,
             ),
             PoseIntent(
                 frame=start_frame + 29,
                 arms=(ArmIntent(resolved_side, _tuple(target_vector), "down", "outward"),),
                 look_target=_tuple(target_vector),
-                gaze_strength=1.0,
-                body_follow=0.85,
-                forward_lean_degrees=1.2,
+                gaze_strength=0.38,
+                body_follow=0.60,
+                forward_lean_degrees=0.8,
             ),
         )
         return self.animate_path(
@@ -433,8 +433,8 @@ class LimijoySemanticActions:
         length = self.reference_chain_length
         carry_centre = Vector(centre) if centre is not None else (
             self.shoulder_centre()
-            + self.forward * (length * 0.47)
-            - self.up * (length * 0.24)
+            + self.forward * (length * 0.62)
+            - self.up * (length * 0.42)
         )
         separation = self.right * (length * 0.17)
         targets = {
@@ -458,14 +458,14 @@ class LimijoySemanticActions:
                 frame=start_frame + 9,
                 arms=bilateral(0.45),
                 look_target=_tuple(carry_centre),
-                gaze_strength=0.35,
+                gaze_strength=0.16,
                 body_follow=0.20,
             ),
             PoseIntent(
                 frame=start_frame + 22,
                 arms=bilateral(1.0),
                 look_target=_tuple(carry_centre),
-                gaze_strength=0.70,
+                gaze_strength=0.24,
                 body_follow=0.35,
                 forward_lean_degrees=1.0,
             ),
@@ -473,7 +473,7 @@ class LimijoySemanticActions:
                 frame=start_frame + 32,
                 arms=bilateral(1.0),
                 look_target=_tuple(carry_centre),
-                gaze_strength=0.70,
+                gaze_strength=0.24,
                 body_follow=0.35,
                 forward_lean_degrees=1.0,
             ),
@@ -519,7 +519,7 @@ class LimijoySemanticActions:
                 frame=start_frame + 10,
                 arms=bilateral(tuck_centre),
                 look_target=_tuple(push_centre),
-                gaze_strength=0.55,
+                gaze_strength=0.18,
                 body_follow=0.45,
                 forward_lean_degrees=0.8,
             ),
@@ -527,17 +527,17 @@ class LimijoySemanticActions:
                 frame=start_frame + 24,
                 arms=bilateral(push_centre),
                 look_target=_tuple(push_centre),
-                gaze_strength=0.85,
-                body_follow=0.80,
-                forward_lean_degrees=3.5,
+                gaze_strength=0.28,
+                body_follow=0.65,
+                forward_lean_degrees=2.5,
             ),
             PoseIntent(
                 frame=start_frame + 34,
                 arms=bilateral(push_centre),
                 look_target=_tuple(push_centre),
-                gaze_strength=0.85,
-                body_follow=0.80,
-                forward_lean_degrees=3.5,
+                gaze_strength=0.28,
+                body_follow=0.65,
+                forward_lean_degrees=2.5,
             ),
         )
         return self.animate_path(
@@ -567,7 +567,10 @@ class LimijoySemanticActions:
                 ArmIntent(
                     side,
                     _tuple(
-                        self.reference_hands[side]
+                        self.reference_shoulders[side].lerp(
+                            self.reference_hands[side],
+                            0.90,
+                        )
                         + self.forward
                         * (length * amplitude * phase * (1.0 if side == "left" else -1.0))
                         + self.up * (length * 0.015)

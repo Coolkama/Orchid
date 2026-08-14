@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 import sys
 from dataclasses import asdict
@@ -105,20 +104,20 @@ shoulder_centre = actions.shoulder_centre()
 # to judge.  Props only visualise intent; they are not part of the controller.
 reach_target = (
     shoulder_centre
-    + actions.forward * (length * 0.82)
-    + actions.right * (length * 0.27)
-    + actions.up * (length * 0.08)
+    + actions.forward * (length * 0.70)
+    + actions.right * (length * 0.55)
+    + actions.up * (length * 0.26)
 )
 point_target = (
     shoulder_centre
-    + actions.forward * (length * 0.86)
-    - actions.right * (length * 0.30)
-    + actions.up * (length * 0.14)
+    + actions.forward * (length * 0.68)
+    - actions.right * (length * 0.58)
+    + actions.up * (length * 0.22)
 )
 carry_centre = (
     shoulder_centre
-    + actions.forward * (length * 0.47)
-    - actions.up * (length * 0.24)
+    + actions.forward * (length * 0.62)
+    - actions.up * (length * 0.42)
 )
 push_centre = (
     shoulder_centre
@@ -132,7 +131,11 @@ clips = [
     actions.wave(side="right", start_frame=105),
     actions.carry(carry_centre, start_frame=171),
     actions.push(push_centre, start_frame=223),
-    actions.walking_arm_swing(start_frame=277, release_at_end=True),
+    actions.walking_arm_swing(
+        start_frame=277,
+        amplitude=0.18,
+        release_at_end=True,
+    ),
 ]
 actions.set_smooth_interpolation()
 
@@ -168,7 +171,11 @@ bpy.ops.mesh.primitive_uv_sphere_add(
     segments=24,
     ring_count=12,
     radius=extent * 0.060,
-    location=carry_centre + actions.up * (extent * 0.028),
+    location=(
+        carry_centre
+        + actions.forward * (extent * 0.040)
+        + actions.up * (extent * 0.035)
+    ),
 )
 carry_prop = bpy.context.object
 carry_prop.name = "PROP_CarryObject"
@@ -201,11 +208,10 @@ scene.render.engine = (
     if "BLENDER_EEVEE" in engines
     else "BLENDER_WORKBENCH"
 )
-scene.render.resolution_x = 360
-scene.render.resolution_y = 360
+scene.render.resolution_x = 340
+scene.render.resolution_y = 340
 scene.render.resolution_percentage = 100
 scene.render.image_settings.file_format = "PNG"
-scene.render.filepath = str(FRAMES / "frame_")
 scene.render.fps = 24
 scene.frame_start = 1
 scene.frame_end = max(clip.frame_end for clip in clips)
@@ -213,7 +219,7 @@ if scene.world is None:
     scene.world = bpy.data.worlds.new("World")
 scene.world.color = (0.035, 0.035, 0.045)
 
-camera_location = centre + Vector((extent * 1.55, -extent * 3.75, extent * 0.26))
+camera_location = centre + Vector((extent * 0.85, -extent * 3.85, extent * 0.22))
 bpy.ops.object.camera_add(location=camera_location)
 camera = bpy.context.object
 camera.data.type = "ORTHO"
@@ -232,16 +238,24 @@ for location, energy, size in (
     light.rotation_euler = (centre - light.location).to_track_quat("-Z", "Y").to_euler()
 
 bpy.ops.wm.save_as_mainfile(filepath=str(OUTPUT / "semantic-action-showcase.blend"))
-bpy.ops.render.render(animation=True)
+
+# The action data remains authored at 24 fps.  The review reel samples every
+# other frame at 12 fps, preserving duration while halving CI render time.
+preview_step = 2
+preview_frames = list(range(scene.frame_start, scene.frame_end + 1, preview_step))
+for sample_index, source_frame in enumerate(preview_frames, start=1):
+    scene.frame_set(source_frame)
+    scene.render.filepath = str(FRAMES / f"sample_{sample_index:04d}.png")
+    bpy.ops.render.render(write_still=True)
 
 subprocess.run(
     (
         "ffmpeg",
         "-y",
         "-framerate",
-        "24",
+        "12",
         "-i",
-        str(FRAMES / "frame_%04d.png"),
+        str(FRAMES / "sample_%04d.png"),
         "-c:v",
         "libx264",
         "-pix_fmt",
@@ -255,11 +269,11 @@ subprocess.run(
         "ffmpeg",
         "-y",
         "-framerate",
-        "24",
+        "12",
         "-i",
-        str(FRAMES / "frame_%04d.png"),
+        str(FRAMES / "sample_%04d.png"),
         "-vf",
-        "fps=10,scale=360:-1:flags=lanczos",
+        "fps=10,scale=340:-1:flags=lanczos",
         "-loop",
         "0",
         str(OUTPUT / "preview.gif"),
@@ -269,9 +283,10 @@ subprocess.run(
 
 for index, clip in enumerate(clips, start=1):
     peak_frame = clip.peak_frames[0]
-    source = FRAMES / f"frame_{peak_frame:04d}.png"
     destination = PEAK_STILLS / f"{index:02d}_{clip.name}.png"
-    shutil.copy2(source, destination)
+    scene.frame_set(peak_frame)
+    scene.render.filepath = str(destination)
+    bpy.ops.render.render(write_still=True)
 
 applications = [application for clip in clips for application in clip.applications]
 arm_results = [arm for application in applications for arm in application.arms]
@@ -290,6 +305,12 @@ report = {
         for clip in clips
     },
     "walk_policy": WALK_POLICY,
+    "preview_sampling": {
+        "action_fps": 24,
+        "preview_fps": 12,
+        "source_frame_step": preview_step,
+        "rendered_preview_frames": len(preview_frames),
+    },
     "maximum_target_error": max(arm.reach.target_error for arm in arm_results),
     "maximum_palm_error_degrees": max(
         arm.reach.palm_error_degrees for arm in arm_results
