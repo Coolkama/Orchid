@@ -7,6 +7,7 @@ on:
       - 'assets/models/glimmerkin.glb'
       - 'scripts/generate_limijoy_face_textures.py'
       - 'scripts/limijoy_face_texture_prototype.py'
+      - 'scripts/limijoy_face_inplace_prototype.py'
       - 'scripts/limijoy_body_semantic_controls.py'
       - 'scripts/inspect_rig.py'
       - '.github/workflows/limijoy-face-texture-prototype.yml'
@@ -32,10 +33,10 @@ jobs:
           python3 scripts/generate_limijoy_face_textures.py \
             --output output/limijoy-face-texture-prototype/textures
 
-      - name: Smooth and render the existing rigged face
+      - name: Smooth and render the original rigged face in place
         run: |
           blender --background --python-exit-code 1 \
-            --python scripts/limijoy_face_texture_prototype.py -- \
+            --python scripts/limijoy_face_inplace_prototype.py -- \
             --model=assets/models/glimmerkin.glb \
             --textures=output/limijoy-face-texture-prototype/textures
 
