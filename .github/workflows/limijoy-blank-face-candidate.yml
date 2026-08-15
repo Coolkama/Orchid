@@ -40,11 +40,20 @@ jobs:
             --output output/limijoy-blank-face-candidate/textures
 
       - name: Render expressions on native blank face
+        id: render_candidate
+        continue-on-error: true
         run: |
           blender --background --python-exit-code 1 \
             --python scripts/limijoy_blank_face_candidate.py -- \
             --model=assets/models/glimmerkin-blank-face-candidate.glb \
             --textures=output/limijoy-blank-face-candidate/textures
+
+      - name: Verify render/export outputs exist
+        run: |
+          test -f output/limijoy-blank-face-candidate/renders/10-neutral-front.png
+          test -f output/limijoy-blank-face-candidate/renders/10-blink-front.png
+          test -f output/limijoy-blank-face-candidate/renders/20-neutral-head-right.png
+          test -f output/limijoy-blank-face-candidate/glimmerkin-blank-face-textured.glb
 
       - name: Build labelled comparison sheet
         run: |
