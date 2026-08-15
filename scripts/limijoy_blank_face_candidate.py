@@ -1,14 +1,13 @@
-"""Render texture expressions directly on the new native blank Limijoy face.
+"""Render transparent expression overlays on the new native blank Limijoy face.
 
-Unlike the earlier face-plate experiments, this prototype never cuts, smooths,
-or replaces facial geometry.  It detects the cream front-face polygons already
-present in the new Meshy model, gives only those polygons a dedicated expression
-material/UV layer, and proves the texture remains attached while the real
-head/neck rig turns.
+The Meshy candidate already has the smooth cream facial surface we need. This
+prototype therefore keeps the original geometry and material intact, adds only a
+second projected UV set, and mixes an RGBA feature texture over the existing base
+colour. The transparent overlay contains eyes, brows, cheeks, and mouth only, so
+the model's own face contour and shading remain untouched.
 
-The candidate rig is resolved semantically through limijoy_rig_profiles.py so
-this experiment also validates that the 28-bone Meshy generation is a usable
-second rig profile.
+The 28-bone candidate rig is resolved through limijoy_rig_profiles.py and is
+validated again after GLB export.
 """
 
 from __future__ import annotations
@@ -40,7 +39,7 @@ TEXTURES.mkdir(parents=True, exist_ok=True)
 
 STATES = ("neutral", "blink", "happy", "curious", "sad", "determined")
 FACE_UV_NAME = "LimijoyFaceUV"
-FACE_MATERIAL_NAME = "Limijoy_Face_Animated"
+OVERLAY_NODE_NAME = "LimijoyFaceOverlay"
 
 
 def argument_path(name: str, default: Path) -> Path:
@@ -103,44 +102,9 @@ def compare_rigs(
     return maximum_delta, problems
 
 
-def create_face_material(
-    texture_path: Path,
-) -> tuple[bpy.types.Material, bpy.types.ShaderNodeTexImage]:
-    material = bpy.data.materials.new(FACE_MATERIAL_NAME)
-    material.use_nodes = True
-    nodes = material.node_tree.nodes
-    links = material.node_tree.links
-    for node in list(nodes):
-        nodes.remove(node)
-
-    output = nodes.new("ShaderNodeOutputMaterial")
-    shader = nodes.new("ShaderNodeBsdfPrincipled")
-    texture = nodes.new("ShaderNodeTexImage")
-    uv_map = nodes.new("ShaderNodeUVMap")
-
-    uv_map.uv_map = FACE_UV_NAME
-    texture.name = "LimijoyFaceTexture"
-    texture.label = "Animated Limijoy face"
-    texture.interpolation = "Linear"
-    texture.extension = "CLIP"
-    texture.image = bpy.data.images.load(str(texture_path), check_existing=True)
-
-    links.new(uv_map.outputs["UV"], texture.inputs["Vector"])
-    links.new(texture.outputs["Color"], shader.inputs["Base Color"])
-    links.new(shader.outputs["BSDF"], output.inputs["Surface"])
-
-    shader.inputs["Roughness"].default_value = 0.62
-    if "Specular IOR Level" in shader.inputs:
-        shader.inputs["Specular IOR Level"].default_value = 0.22
-    elif "Specular" in shader.inputs:
-        shader.inputs["Specular"].default_value = 0.22
-
-    material.diffuse_color = (0.88, 0.83, 0.58, 1.0)
-    material.use_backface_culling = False
-    return material, texture
-
-
-def find_base_colour_image(mesh_object: bpy.types.Object) -> bpy.types.Image:
+def find_source_material_and_image(
+    mesh_object: bpy.types.Object,
+):
     for material in mesh_object.data.materials:
         if material is None or not material.use_nodes:
             continue
@@ -156,7 +120,7 @@ def find_base_colour_image(mesh_object: bpy.types.Object) -> bpy.types.Image:
             continue
         source = base_input.links[0].from_node
         if source.type == "TEX_IMAGE" and source.image is not None:
-            return source.image
+            return material, principled, source.image
     raise RuntimeError("Could not find source base-colour image on Mesh_0")
 
 
@@ -182,7 +146,11 @@ def cream_likelihood(rgb: np.ndarray) -> float:
     brightness = (r + g + b) / 3.0
     warm_balance = 1.0 - min(1.0, abs(r - g) * 2.5)
     blue_ratio = b / max(0.05, max(r, g))
-    return brightness * max(0.0, warm_balance) * min(1.0, blue_ratio * 1.8)
+    return (
+        brightness
+        * max(0.0, warm_balance)
+        * min(1.0, blue_ratio * 1.8)
+    )
 
 
 def identify_native_face_polygons(
@@ -190,14 +158,14 @@ def identify_native_face_polygons(
     *,
     minimum: Vector,
     maximum: Vector,
+    source_image: bpy.types.Image,
 ) -> list[int]:
     mesh = mesh_object.data
     uv_layer = mesh.uv_layers.active
     if uv_layer is None:
         raise RuntimeError("Candidate mesh has no source UV layer")
 
-    image = find_base_colour_image(mesh_object)
-    pixels = image_pixels(image)
+    pixels = image_pixels(source_image)
     size = maximum - minimum
     centre = (minimum + maximum) * 0.5
     selected: list[int] = []
@@ -238,27 +206,30 @@ def identify_native_face_polygons(
     return selected
 
 
-def assign_expression_material(
+def configure_face_overlay_uv(
     mesh_object: bpy.types.Object,
     face_polygons: list[int],
-    material: bpy.types.Material,
 ) -> dict[str, object]:
+    """Map only the native cream patch; all other loops sample transparent 0,0."""
     mesh = mesh_object.data
     source_uv = mesh.uv_layers.active
     if source_uv is None:
         raise RuntimeError("Candidate mesh has no source UV layer")
 
-    face_set = set(face_polygons)
     matrix_world = mesh_object.matrix_world
     face_points: list[Vector] = []
     for polygon_index in face_polygons:
         polygon = mesh.polygons[polygon_index]
         for loop_index in polygon.loop_indices:
             vertex_index = mesh.loops[loop_index].vertex_index
-            face_points.append(matrix_world @ mesh.vertices[vertex_index].co)
+            face_points.append(
+                matrix_world @ mesh.vertices[vertex_index].co
+            )
 
     min_x = min(point.x for point in face_points)
     max_x = max(point.x for point in face_points)
+    min_y = min(point.y for point in face_points)
+    max_y = max(point.y for point in face_points)
     min_z = min(point.z for point in face_points)
     max_z = max(point.z for point in face_points)
     width = max_x - min_x
@@ -269,19 +240,16 @@ def assign_expression_material(
     face_uv = mesh.uv_layers.get(FACE_UV_NAME)
     if face_uv is None:
         face_uv = mesh.uv_layers.new(name=FACE_UV_NAME)
-    for index, source in enumerate(source_uv.data):
-        face_uv.data[index].uv = source.uv
 
-    mesh.materials.append(material)
-    material_index = len(mesh.materials) - 1
+    for item in face_uv.data:
+        item.uv = (0.0, 0.0)
+
     padding = 0.035
     usable = 1.0 - padding * 2.0
     loop_count = 0
 
-    for polygon in mesh.polygons:
-        if polygon.index not in face_set:
-            continue
-        polygon.material_index = material_index
+    for polygon_index in face_polygons:
+        polygon = mesh.polygons[polygon_index]
         for loop_index in polygon.loop_indices:
             vertex_index = mesh.loops[loop_index].vertex_index
             point = matrix_world @ mesh.vertices[vertex_index].co
@@ -295,22 +263,74 @@ def assign_expression_material(
 
     mesh.uv_layers.active = source_uv
     mesh.update()
+
     return {
-        "face_polygons": len(face_polygons),
+        "face_polygons_used_for_uv": len(face_polygons),
         "face_uv_loops": loop_count,
         "face_bounds": {
-            "minimum": [float(min_x), float(min_z)],
-            "maximum": [float(max_x), float(max_z)],
+            "minimum": [float(min_x), float(min_y), float(min_z)],
+            "maximum": [float(max_x), float(max_y), float(max_z)],
         },
         "geometry_policy": (
             "Native blank face retained exactly; no facial vertices or polygons "
             "added, removed, smoothed, or repositioned"
         ),
         "uv_policy": (
-            "Source UV retained; LimijoyFaceUV added only for polygons detected "
-            "as the native cream facial patch"
+            "Source UV retained unchanged; LimijoyFaceUV projects only the "
+            "feature overlay over the detected native cream patch"
         ),
     }
+
+
+def install_feature_overlay(
+    material: bpy.types.Material,
+    principled,
+    overlay_path: Path,
+) -> bpy.types.ShaderNodeTexImage:
+    """Composite RGBA features over the existing material Base Color."""
+    nodes = material.node_tree.nodes
+    links = material.node_tree.links
+    base_input = principled.inputs.get("Base Color")
+    if base_input is None:
+        raise RuntimeError("Source Principled material has no Base Color input")
+
+    source_link = base_input.links[0] if base_input.is_linked else None
+    source_socket = source_link.from_socket if source_link else None
+    source_default = tuple(float(value) for value in base_input.default_value)
+
+    uv_map = nodes.new("ShaderNodeUVMap")
+    uv_map.name = "LimijoyFaceOverlayUV"
+    uv_map.label = "Limijoy face overlay UV"
+    uv_map.uv_map = FACE_UV_NAME
+
+    overlay = nodes.new("ShaderNodeTexImage")
+    overlay.name = OVERLAY_NODE_NAME
+    overlay.label = "Limijoy animated face features"
+    overlay.interpolation = "Linear"
+    overlay.extension = "CLIP"
+    overlay.image = bpy.data.images.load(
+        str(overlay_path),
+        check_existing=True,
+    )
+    overlay.image.alpha_mode = "STRAIGHT"
+
+    mix = nodes.new("ShaderNodeMixRGB")
+    mix.name = "LimijoyFaceOverlayMix"
+    mix.label = "Native face + Limijoy features"
+    mix.blend_type = "MIX"
+    mix.inputs[0].default_value = 1.0
+
+    if source_link is not None:
+        links.remove(source_link)
+        links.new(source_socket, mix.inputs[1])
+    else:
+        mix.inputs[1].default_value = source_default
+
+    links.new(uv_map.outputs["UV"], overlay.inputs["Vector"])
+    links.new(overlay.outputs["Alpha"], mix.inputs[0])
+    links.new(overlay.outputs["Color"], mix.inputs[2])
+    links.new(mix.outputs["Color"], base_input)
+    return overlay
 
 
 class CandidateLookControls:
@@ -318,7 +338,6 @@ class CandidateLookControls:
 
     def __init__(self, armature: bpy.types.Object, profile) -> None:
         self.armature = armature
-        self.profile = profile
         body = profile.body
         self.torso = armature.pose.bones[body["torso"]]
         self.neck = armature.pose.bones[body["neck"]]
@@ -344,7 +363,10 @@ class CandidateLookControls:
             @ Vector(axis).normalized()
         ).normalized()
 
-    def pose_bone_world_rotation(self, pose_bone: bpy.types.PoseBone) -> Quaternion:
+    def pose_bone_world_rotation(
+        self,
+        pose_bone: bpy.types.PoseBone,
+    ) -> Quaternion:
         result = (
             self.armature.matrix_world.to_quaternion()
             @ pose_bone.matrix.to_quaternion()
@@ -352,7 +374,11 @@ class CandidateLookControls:
         result.normalize()
         return result
 
-    def apply_yaw(self, pose_bone: bpy.types.PoseBone, degrees: float) -> None:
+    def apply_yaw(
+        self,
+        pose_bone: bpy.types.PoseBone,
+        degrees: float,
+    ) -> None:
         delta = Quaternion(
             self.character_axis((0.0, 0.0, 1.0)),
             math.radians(degrees),
@@ -392,6 +418,7 @@ def configure_render(
             minimum.z + size.z * 0.68,
         )
     )
+
     engines = {
         item.identifier
         for item in bpy.types.RenderSettings.bl_rna.properties["engine"].enum_items
@@ -408,6 +435,7 @@ def configure_render(
     scene.render.resolution_percentage = 100
     scene.render.image_settings.file_format = "PNG"
     scene.render.film_transparent = False
+
     if scene.world is None:
         scene.world = bpy.data.worlds.new("LimijoyCandidateWorld")
     scene.world.color = (0.028, 0.027, 0.035)
@@ -425,17 +453,20 @@ def configure_render(
 
     for location, energy, radius in (
         (
-            head_target + Vector((extent * 1.4, -extent * 1.8, extent * 1.4)),
+            head_target
+            + Vector((extent * 1.4, -extent * 1.8, extent * 1.4)),
             850,
             extent * 1.8,
         ),
         (
-            head_target + Vector((-extent * 1.2, -extent * 1.0, extent * 0.7)),
+            head_target
+            + Vector((-extent * 1.2, -extent * 1.0, extent * 0.7)),
             390,
             extent * 2.2,
         ),
         (
-            head_target + Vector((0.0, extent * 1.4, extent * 1.2)),
+            head_target
+            + Vector((0.0, extent * 1.4, extent * 1.2)),
             470,
             extent * 1.5,
         ),
@@ -447,6 +478,7 @@ def configure_render(
         light.rotation_euler = (
             head_target - light.location
         ).to_track_quat("-Z", "Y").to_euler()
+
     return camera
 
 
@@ -460,22 +492,27 @@ model_path = argument_path(
     ROOT / "assets" / "models" / "glimmerkin-blank-face-candidate.glb",
 )
 texture_dir = argument_path("textures", TEXTURES)
+
 if not model_path.exists():
-    raise FileNotFoundError(
-        f"Blank-face candidate GLB is missing: {model_path}. "
-        "Upload the new Meshy export to that repository path."
-    )
+    raise FileNotFoundError(f"Blank-face candidate GLB is missing: {model_path}")
+
 for state in STATES:
-    texture_path = texture_dir / f"limijoy-face-{state}.png"
-    if not texture_path.exists():
-        raise FileNotFoundError(f"Missing generated face texture: {texture_path}")
+    overlay_path = texture_dir / f"limijoy-face-{state}-overlay.png"
+    if not overlay_path.exists():
+        raise FileNotFoundError(
+            f"Missing generated feature overlay: {overlay_path}"
+        )
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=str(model_path))
 scene = bpy.context.scene
-armature = next((obj for obj in scene.objects if obj.type == "ARMATURE"), None)
+armature = next(
+    (obj for obj in scene.objects if obj.type == "ARMATURE"),
+    None,
+)
 if armature is None:
     raise RuntimeError("Candidate GLB contains no armature")
+
 skinned_meshes = [
     obj
     for obj in scene.objects
@@ -484,7 +521,11 @@ skinned_meshes = [
 ]
 if not skinned_meshes:
     raise RuntimeError("Candidate GLB contains no skinned mesh")
-main_mesh = max(skinned_meshes, key=lambda obj: len(obj.data.vertices))
+
+main_mesh = max(
+    skinned_meshes,
+    key=lambda obj: len(obj.data.vertices),
+)
 
 if armature.animation_data and armature.animation_data.action:
     armature.animation_data.action = None
@@ -494,36 +535,56 @@ bpy.context.view_layer.update()
 
 profile = resolve_rig_profile(armature.data.bones.keys())
 if profile.name != "blank-face-candidate-28":
-    raise RuntimeError(f"Expected blank-face candidate rig, resolved {profile.name!r}")
+    raise RuntimeError(
+        f"Expected blank-face candidate rig, resolved {profile.name!r}"
+    )
 
 source_rig = rig_fingerprint(armature)
 source_vertex_count = len(main_mesh.data.vertices)
 source_polygon_count = len(main_mesh.data.polygons)
-source_group_names = {group.name for group in main_mesh.vertex_groups}
+source_group_names = {
+    group.name
+    for group in main_mesh.vertex_groups
+}
+source_material_count = len(main_mesh.data.materials)
 minimum, maximum = world_bounds(skinned_meshes)
+
+source_material, source_principled, source_image = find_source_material_and_image(
+    main_mesh
+)
 
 configure_render(scene, minimum, maximum)
 render(scene, "00-native-blank-face.png")
+
 face_polygons = identify_native_face_polygons(
     main_mesh,
     minimum=minimum,
     maximum=maximum,
+    source_image=source_image,
 )
-face_material, face_texture = create_face_material(
-    texture_dir / "limijoy-face-neutral.png"
+face_report = configure_face_overlay_uv(
+    main_mesh,
+    face_polygons,
 )
-face_report = assign_expression_material(main_mesh, face_polygons, face_material)
+face_texture = install_feature_overlay(
+    source_material,
+    source_principled,
+    texture_dir / "limijoy-face-neutral-overlay.png",
+)
 
 if len(main_mesh.data.vertices) != source_vertex_count:
-    raise RuntimeError("Native face setup changed the candidate vertex count")
+    raise RuntimeError("Feature overlay setup changed the candidate vertex count")
 if len(main_mesh.data.polygons) != source_polygon_count:
-    raise RuntimeError("Native face setup changed the candidate polygon count")
+    raise RuntimeError("Feature overlay setup changed the candidate polygon count")
+if len(main_mesh.data.materials) != source_material_count:
+    raise RuntimeError("Feature overlay setup changed the source material slots")
 
 for state in STATES:
     face_texture.image = bpy.data.images.load(
-        str(texture_dir / f"limijoy-face-{state}.png"),
+        str(texture_dir / f"limijoy-face-{state}-overlay.png"),
         check_existing=True,
     )
+    face_texture.image.alpha_mode = "STRAIGHT"
     bpy.context.view_layer.update()
     render(scene, f"10-{state}-front.png")
 
@@ -534,17 +595,19 @@ for label, degrees, state in (
 ):
     look.turn(degrees)
     face_texture.image = bpy.data.images.load(
-        str(texture_dir / f"limijoy-face-{state}.png"),
+        str(texture_dir / f"limijoy-face-{state}-overlay.png"),
         check_existing=True,
     )
+    face_texture.image.alpha_mode = "STRAIGHT"
     bpy.context.view_layer.update()
     render(scene, f"20-{state}-head-{label}.png")
 
 look.reset()
 face_texture.image = bpy.data.images.load(
-    str(texture_dir / "limijoy-face-neutral.png"),
+    str(texture_dir / "limijoy-face-neutral-overlay.png"),
     check_existing=True,
 )
+face_texture.image.alpha_mode = "STRAIGHT"
 bpy.context.view_layer.update()
 
 prototype_path = OUTPUT / "glimmerkin-blank-face-textured.glb"
@@ -552,6 +615,7 @@ bpy.ops.object.select_all(action="DESELECT")
 armature.select_set(True)
 main_mesh.select_set(True)
 bpy.context.view_layer.objects.active = main_mesh
+
 bpy.ops.export_scene.gltf(
     filepath=str(prototype_path),
     export_format="GLB",
@@ -568,7 +632,9 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=str(prototype_path))
 exported_scene = bpy.context.scene
 exported_armature = next(
-    obj for obj in exported_scene.objects if obj.type == "ARMATURE"
+    obj
+    for obj in exported_scene.objects
+    if obj.type == "ARMATURE"
 )
 exported_meshes = [
     obj
@@ -576,9 +642,18 @@ exported_meshes = [
     if obj.type == "MESH"
     and any(modifier.type == "ARMATURE" for modifier in obj.modifiers)
 ]
-exported_main = max(exported_meshes, key=lambda obj: len(obj.data.vertices))
+if not exported_meshes:
+    raise RuntimeError("Exported candidate contains no skinned mesh")
+
+exported_main = max(
+    exported_meshes,
+    key=lambda obj: len(obj.data.vertices),
+)
 exported_rig = rig_fingerprint(exported_armature)
-maximum_rig_delta, rig_problems = compare_rigs(source_rig, exported_rig)
+maximum_rig_delta, rig_problems = compare_rigs(
+    source_rig,
+    exported_rig,
+)
 if rig_problems:
     raise RuntimeError("; ".join(rig_problems))
 if maximum_rig_delta > 1.0e-4:
@@ -586,10 +661,15 @@ if maximum_rig_delta > 1.0e-4:
         f"Candidate rig rest transforms drifted by {maximum_rig_delta:.8f}"
     )
 
-exported_group_names = {group.name for group in exported_main.vertex_groups}
+exported_group_names = {
+    group.name
+    for group in exported_main.vertex_groups
+}
 missing_groups = sorted(source_group_names - exported_group_names)
 if missing_groups:
-    raise RuntimeError(f"Exported candidate lost vertex groups: {missing_groups}")
+    raise RuntimeError(
+        f"Exported candidate lost vertex groups: {missing_groups}"
+    )
 
 semantic_bones = {
     "body": dict(profile.body),
@@ -609,6 +689,11 @@ if mapped_missing:
         f"Candidate semantic map references missing bones: {mapped_missing}"
     )
 
+exported_uv_names = [
+    layer.name
+    for layer in exported_main.data.uv_layers
+]
+
 report = {
     "source_model": str(model_path.relative_to(ROOT)),
     "prototype_model": str(prototype_path.relative_to(ROOT)),
@@ -620,11 +705,25 @@ report = {
     "exported_vertex_groups": len(exported_group_names),
     "source_vertices": source_vertex_count,
     "source_polygons": source_polygon_count,
+    "source_material_slots": source_material_count,
+    "post_overlay_material_slots": len(main_mesh.data.materials),
     "semantic_bones": semantic_bones,
     "all_semantic_bones_present": not mapped_missing,
+    "overlay_policy": (
+        "Transparent RGBA eyes/brows/cheeks/mouth are alpha-composited over "
+        "the original model Base Color; the native cream face and its boundary "
+        "are never replaced"
+    ),
+    "exported_uv_layers": exported_uv_names,
+    "face_uv_exported": FACE_UV_NAME in exported_uv_names,
     **face_report,
     "states": list(STATES),
 }
-with (OUTPUT / "candidate-report.json").open("w", encoding="utf-8") as handle:
+
+with (OUTPUT / "candidate-report.json").open(
+    "w",
+    encoding="utf-8",
+) as handle:
     json.dump(report, handle, indent=2)
+
 print(json.dumps(report, indent=2))
