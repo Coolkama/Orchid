@@ -85,27 +85,30 @@ TPOSE_BLANK_FACE_CANDIDATE = LimijoyRigProfile(
     name="tpose-blank-face-candidate-45",
     bone_count=45,
     body={
-        # Bone_015 is the low torso/root-follow segment.  Bone_014 provides the
+        # Bone_015 is the low torso/root-follow segment. Bone_014 provides the
         # restrained chest follow used by the semantic look controller.
         "torso": "Bone_014",
         "neck": "Bone_018",
         "head": "Bone_017",
         "head_tip": "Bone_016",
     },
-    # Anatomical right is viewer-left in the front reference image.
+    # The semantic controller defines character-right as +X. On this Meshy
+    # generation Bone_028->024 is the +X shoulder/arm chain and Bone_023->019
+    # is the -X chain. Keep the profile aligned with semantic coordinates rather
+    # than screen/viewer labels, otherwise bilateral actions cross the body.
     right_arm={
-        "girdle": "Bone_023",
-        "upper": "Bone_022",
-        "elbow": "Bone_021",
-        "wrist": "Bone_020",
-        "hand": "Bone_019",
-    },
-    left_arm={
         "girdle": "Bone_028",
         "upper": "Bone_027",
         "elbow": "Bone_026",
         "wrist": "Bone_025",
         "hand": "Bone_024",
+    },
+    left_arm={
+        "girdle": "Bone_023",
+        "upper": "Bone_022",
+        "elbow": "Bone_021",
+        "wrist": "Bone_020",
+        "hand": "Bone_019",
     },
 )
 
