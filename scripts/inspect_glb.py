@@ -107,6 +107,7 @@ mesh_report = []
 total_vertices = 0
 total_edges = 0
 total_polygons = 0
+total_morph_targets = 0
 for obj in mesh_objects:
     mesh = obj.data
     verts = len(mesh.vertices)
@@ -116,6 +117,20 @@ for obj in mesh_objects:
     total_edges += edges
     total_polygons += polys
     tris = sum(max(1, len(p.vertices) - 2) for p in mesh.polygons)
+    shape_keys = []
+    if mesh.shape_keys:
+        shape_keys = [
+            {
+                "name": key.name,
+                "relative_key": key.relative_key.name if key.relative_key else None,
+                "value": key.value,
+                "slider_min": key.slider_min,
+                "slider_max": key.slider_max,
+            }
+            for key in mesh.shape_keys.key_blocks
+        ]
+    morph_target_count = max(0, len(shape_keys) - 1)
+    total_morph_targets += morph_target_count
     mesh_report.append({
         "name": obj.name,
         "vertices": verts,
@@ -125,6 +140,9 @@ for obj in mesh_objects:
         "materials": [slot.material.name if slot.material else None for slot in obj.material_slots],
         "vertex_groups": [g.name for g in obj.vertex_groups],
         "armature_modifiers": [m.object.name for m in obj.modifiers if m.type == "ARMATURE" and m.object],
+        "uv_layers": [layer.name for layer in mesh.uv_layers],
+        "shape_keys": shape_keys,
+        "morph_target_count": morph_target_count,
     })
 
 armature_report = []
@@ -154,6 +172,7 @@ report = {
         "materials": len(bpy.data.materials),
         "images": len(bpy.data.images),
         "actions": len(bpy.data.actions),
+        "morph_targets": total_morph_targets,
     },
     "meshes": mesh_report,
     "armatures": armature_report,
