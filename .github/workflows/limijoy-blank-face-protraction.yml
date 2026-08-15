@@ -1,0 +1,51 @@
+name: Limijoy blank-face shoulder protraction
+
+on:
+  push:
+    branches: [blank-face-candidate-validation]
+    paths:
+      - 'scripts/limijoy_blank_face_protraction_test.py'
+      - '.github/workflows/limijoy-blank-face-protraction.yml'
+  workflow_dispatch:
+
+jobs:
+  protraction:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Blender and image tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender python3-numpy imagemagick libegl1 libgl1 libglx-mesa0 libopengl0 mesa-utils
+          blender --version
+
+      - name: Render shoulder-protraction proof
+        run: |
+          blender --background --python-exit-code 1 \
+            --python scripts/limijoy_blank_face_protraction_test.py -- \
+            --model=assets/models/glimmerkin-blank-face-candidate.glb
+
+      - name: Build protraction comparison sheet
+        run: |
+          montage output/limijoy-blank-face-protraction/stills/*.png \
+            -thumbnail 440x440 \
+            -tile 3x \
+            -geometry +18+38 \
+            -background '#17151d' \
+            -fill '#f5f0e8' \
+            -stroke none \
+            -pointsize 18 \
+            -set label '%t' \
+            output/limijoy-blank-face-protraction/protraction-comparison.png
+
+      - name: Upload protraction review
+        uses: actions/upload-artifact@v4
+        with:
+          name: limijoy-blank-face-protraction
+          path: output/limijoy-blank-face-protraction/
+          retention-days: 7
+          if-no-files-found: error
