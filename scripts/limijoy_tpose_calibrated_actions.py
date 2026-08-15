@@ -1,10 +1,11 @@
 """Calibrate the 45-bone T-pose Limijoy rig into a relaxed semantic neutral.
 
 Meshy correctly keeps the arms separate from the torso, but the imported bind pose
-is a true T-pose.  Limijoy behaviour expects a relaxed neutral pose.  This review
-rotates only the shoulder-girdle controls into a gentle down/out neutral, records
-that pose as the semantic rest state, then reuses the existing wave/carry/push and
-walking-arm-swing actions unchanged.
+is a true T-pose. Limijoy behaviour expects a relaxed neutral pose. This review
+rotates only the upper-arm controls into a gentle down/out neutral while leaving
+the shoulder-girdle/collar controls untouched, records that pose as the semantic
+rest state, then reuses the existing wave/carry/push and walking-arm-swing actions
+unchanged.
 """
 
 from __future__ import annotations
@@ -72,7 +73,7 @@ def point_camera(camera: bpy.types.Object, location: Vector, target: Vector) -> 
 
 
 def calibrate_relaxed_neutral(actions: LimijoySemanticActions) -> dict[str, object]:
-    """Turn T-pose shoulders down while preserving the imported bind/rest rig."""
+    """Turn only the upper arms down; preserve the girdle/collar and bind rig."""
     report = {}
     for side, controller in actions.arms.items():
         controller.ik.influence = 0.0
@@ -88,15 +89,18 @@ def calibrate_relaxed_neutral(actions: LimijoySemanticActions) -> dict[str, obje
         ).normalized()
         delta = current.rotation_difference(target)
 
-        desired_world = delta @ controller._pose_bone_world_rotation(controller.girdle)
+        # IMPORTANT: the girdle bones influence collar/torso vertices in this
+        # Meshy generation. Rotating them pinches the chest. Apply the neutral
+        # drop at the upper arm itself so the torso remains structurally still.
+        desired_world = delta @ controller._pose_bone_world_rotation(controller.upper)
         desired_world.normalize()
         desired_armature = (
             controller.armature.matrix_world.to_quaternion().inverted()
             @ desired_world
         )
         desired_matrix = desired_armature.to_matrix().to_4x4()
-        desired_matrix.translation = controller.girdle.head.copy()
-        controller.girdle.matrix = desired_matrix
+        desired_matrix.translation = controller.upper.head.copy()
+        controller.upper.matrix = desired_matrix
         bpy.context.view_layer.update()
 
         controlled = (
@@ -126,6 +130,11 @@ def calibrate_relaxed_neutral(actions: LimijoySemanticActions) -> dict[str, obje
             "angular_error_degrees": float(achieved.angle(target) * 57.29577951308232),
             "neutral_hand": tuple(float(v) for v in controller.rest_hand_target),
             "neutral_shoulder": tuple(float(v) for v in controller.rest_shoulder),
+            "girdle_matrix_basis_drift": max(
+                abs(float(controller.girdle.matrix_basis[r][c]) - float(controller.girdle.matrix_basis.Identity(4)[r][c]))
+                for r in range(4)
+                for c in range(4)
+            ),
         }
 
     actions.reference_shoulders = {
@@ -282,13 +291,16 @@ if maximum_protected_drift > 1.0e-6:
         f"Finger/lower-foot passive bones drifted independently: {maximum_protected_drift:.9f}"
     )
 
+if max(entry["girdle_matrix_basis_drift"] for entry in calibration.values()) > 1.0e-6:
+    raise RuntimeError("Relaxed-neutral calibration unexpectedly moved a girdle bone")
+
 applications = [application for clip in clips for application in clip.applications]
 arm_results = [arm for application in applications for arm in application.arms]
 report = {
     "model": str(model_path.relative_to(ROOT)),
     "rig_profile": profile.name,
     "bone_count": len(armature.data.bones),
-    "semantic_neutral_policy": "T-pose bind retained; girdle pose calibrated down/out only for Limijoy semantic neutral",
+    "semantic_neutral_policy": "T-pose bind retained; upper-arm pose calibrated down/out; girdle/collar untouched",
     "neutral_calibration": calibration,
     "chain_length": length,
     "clips": [asdict(clip) for clip in clips],
@@ -298,7 +310,7 @@ report = {
     "protected_bone_maximum_matrix_basis_drift": maximum_protected_drift,
     "leg_bones_touched": False,
     "visual_acceptance_focus": [
-        "relaxed neutral arms",
+        "relaxed neutral arms without collar/chest pinch",
         "wave rises above shoulder rather than remaining in T-pose",
         "belly side silhouette stays stable during carry/push",
         "hands clear the belly",
