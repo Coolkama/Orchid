@@ -272,6 +272,44 @@ def create_face_plate(
     return face_plate
 
 
+def remove_baked_face_fragments(
+    mesh_object: bpy.types.Object,
+    *,
+    centre_x: float,
+    centre_z: float,
+    radius_x: float,
+    radius_z: float,
+    front_threshold: float,
+) -> int:
+    """Remove only the old front-face triangles that the new cap replaces."""
+
+    if bpy.context.object is not None and bpy.context.object.mode != "OBJECT":
+        bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.select_all(action="DESELECT")
+    mesh_object.select_set(True)
+    bpy.context.view_layer.objects.active = mesh_object
+    matrix_world = mesh_object.matrix_world.copy()
+    selected = 0
+    for polygon in mesh_object.data.polygons:
+        polygon.select = False
+        centre_local = sum(
+            (mesh_object.data.vertices[index].co for index in polygon.vertices),
+            Vector((0.0, 0.0, 0.0)),
+        ) / len(polygon.vertices)
+        point = matrix_world @ centre_local
+        radius = ellipse_radius(point, centre_x, centre_z, radius_x, radius_z)
+        if point.y < front_threshold and radius <= 1.015:
+            polygon.select = True
+            selected += 1
+    if selected < 100:
+        raise RuntimeError(f"Baked-face removal selected too few polygons: {selected}")
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.delete(type="FACE")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    mesh_object.data.update()
+    return selected
+
+
 def configure_render(scene: bpy.types.Scene, minimum: Vector, maximum: Vector) -> bpy.types.Object:
     size = maximum - minimum
     extent = max(size)
@@ -363,14 +401,24 @@ render(scene, "00-original-baked-face.png")
 
 face_centre_x = centre.x
 face_centre_z = minimum.z + size.z * 0.565
+face_radius_x = size.x * 0.238
+face_radius_z = size.z * 0.137
+baked_face_polygons_removed = remove_baked_face_fragments(
+    main_mesh,
+    centre_x=face_centre_x,
+    centre_z=face_centre_z,
+    radius_x=face_radius_x,
+    radius_z=face_radius_z,
+    front_threshold=centre.y - size.y * 0.185,
+)
 face_material, face_texture_node = create_face_material(texture_dir / "limijoy-face-neutral.png")
 face_plate = create_face_plate(
     armature=armature,
     material=face_material,
     centre_x=face_centre_x,
     centre_z=face_centre_z,
-    radius_x=size.x * 0.238,
-    radius_z=size.z * 0.137,
+    radius_x=face_radius_x,
+    radius_z=face_radius_z,
     boundary_forward=centre.y - size.y * 0.335,
     depth=size.y * 0.172,
 )
@@ -459,6 +507,7 @@ report = {
     "source_vertex_groups": len(source_bone_names),
     "exported_vertex_groups": len(exported_group_names),
     "modified_source_vertices": 0,
+    "removed_baked_face_polygons": baked_face_polygons_removed,
     "face_plate_vertices": face_plate_vertex_count,
     "face_plate_polygons": face_plate_polygon_count,
     "face_plate_head_group": "Bone_033",
@@ -468,8 +517,8 @@ report = {
         "maximum": tuple(float(value) for value in exported_maximum),
     },
     "states": list(STATES),
-    "body_topology_policy": "Source mesh untouched; no remesh, decimation, or auto-rigging",
-    "face_surface_policy": "Smooth skinned ellipsoidal cap covers fragmented baked facial pieces",
+    "body_topology_policy": "Body and rig untouched; only covered facial triangles removed; no remesh, decimation, or auto-rigging",
+    "face_surface_policy": "Smooth skinned ellipsoidal cap replaces fragmented baked facial pieces",
 }
 (OUTPUT / "prototype-report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(report, indent=2))
