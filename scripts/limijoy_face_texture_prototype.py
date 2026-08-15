@@ -1,10 +1,9 @@
 """Build and render a non-destructive textured-face prototype for Limijoy.
 
-The current Meshy asset bakes its eyes and recessed mouth into one skinned mesh,
-one colour atlas, and one normal map.  This prototype keeps the approved
-armature and body skinning, locally restores the face to a smooth neutral
-surface, assigns the facial polygons their own material, and projects the
-canonical expression textures onto that curved surface.
+The current Meshy asset bakes its eyes and recessed mouth into one highly
+fragmented skinned mesh, one colour atlas, and one normal map.  This prototype
+keeps that approved body completely untouched and adds one smooth curved face
+cap, skinned to the existing head bone, for the canonical expression textures.
 
 No remeshing, decimation, or auto-rigging is performed.
 """
@@ -184,7 +183,93 @@ def create_face_material(texture_path: Path) -> tuple[bpy.types.Material, bpy.ty
     elif "Specular" in shader.inputs:
         shader.inputs["Specular"].default_value = 0.28
     material.diffuse_color = (0.86, 0.80, 0.56, 1.0)
+    material.use_backface_culling = False
     return material, texture
+
+
+def create_face_plate(
+    *,
+    armature: bpy.types.Object,
+    material: bpy.types.Material,
+    centre_x: float,
+    centre_z: float,
+    radius_x: float,
+    radius_z: float,
+    boundary_forward: float,
+    depth: float,
+    radial_steps: int = 28,
+    angular_steps: int = 96,
+) -> bpy.types.Object:
+    """Create one smooth, head-skinned oval over the fragmented Meshy face.
+
+    The source facial detail consists of thousands of disconnected pieces.
+    Reusing that surface exposes those fragments as creases when the baked
+    normal map is removed.  A conforming ellipsoidal cap is therefore safer:
+    it covers the old recesses without changing a single source vertex.
+    """
+
+    vertices = [(centre_x, boundary_forward - depth, centre_z)]
+    texture_coordinates = [(0.5, 0.5)]
+    for ring in range(1, radial_steps + 1):
+        radius = ring / radial_steps
+        forward = boundary_forward - depth * math.sqrt(max(0.0, 1.0 - radius * radius))
+        for segment in range(angular_steps):
+            angle = math.tau * segment / angular_steps
+            cosine = math.cos(angle)
+            sine = math.sin(angle)
+            vertices.append(
+                (
+                    centre_x + radius_x * radius * cosine,
+                    forward,
+                    centre_z + radius_z * radius * sine,
+                )
+            )
+            texture_coordinates.append(
+                (
+                    0.5 + 0.49 * radius * cosine,
+                    0.5 + 0.49 * radius * sine,
+                )
+            )
+
+    def ring_vertex(ring: int, segment: int) -> int:
+        return 1 + (ring - 1) * angular_steps + segment % angular_steps
+
+    faces = []
+    for segment in range(angular_steps):
+        faces.append((0, ring_vertex(1, segment), ring_vertex(1, segment + 1)))
+    for ring in range(2, radial_steps + 1):
+        for segment in range(angular_steps):
+            faces.append(
+                (
+                    ring_vertex(ring - 1, segment),
+                    ring_vertex(ring, segment),
+                    ring_vertex(ring, segment + 1),
+                    ring_vertex(ring - 1, segment + 1),
+                )
+            )
+
+    mesh_data = bpy.data.meshes.new("LimijoyFacePlateMesh")
+    mesh_data.from_pydata(vertices, [], faces)
+    mesh_data.materials.append(material)
+    uv_layer = mesh_data.uv_layers.new(name="LimijoyFaceUV")
+    for polygon in mesh_data.polygons:
+        polygon.use_smooth = True
+        polygon.material_index = 0
+        for loop_index in polygon.loop_indices:
+            uv_layer.data[loop_index].uv = texture_coordinates[
+                mesh_data.loops[loop_index].vertex_index
+            ]
+    mesh_data.update()
+
+    face_plate = bpy.data.objects.new("LimijoyAnimatedFace", mesh_data)
+    bpy.context.collection.objects.link(face_plate)
+    face_plate.parent = armature
+    face_plate.matrix_parent_inverse = armature.matrix_world.inverted()
+    vertex_group = face_plate.vertex_groups.new(name="Bone_033")
+    vertex_group.add(range(len(vertices)), 1.0, "REPLACE")
+    modifier = face_plate.modifiers.new(name="LimijoyHeadSkin", type="ARMATURE")
+    modifier.object = armature
+    return face_plate
 
 
 def configure_render(scene: bpy.types.Scene, minimum: Vector, maximum: Vector) -> bpy.types.Object:
@@ -278,97 +363,19 @@ render(scene, "00-original-baked-face.png")
 
 face_centre_x = centre.x
 face_centre_z = minimum.z + size.z * 0.565
-face_radius_x = size.x * 0.255
-face_radius_z = size.z * 0.148
-front_threshold = centre.y - size.y * 0.245
-
-eye_centre_z = minimum.z + size.z * 0.575
-eye_offset_x = size.x * 0.120
-eye_radius_x = size.x * 0.072
-eye_radius_z = size.z * 0.068
-mouth_centre_z = minimum.z + size.z * 0.495
-mouth_radius_x = size.x * 0.080
-mouth_radius_z = size.z * 0.047
-
-matrix_world = main_mesh.matrix_world.copy()
-matrix_world_inverse = matrix_world.inverted()
-world_vertices = [matrix_world @ vertex.co for vertex in main_mesh.data.vertices]
-
-
-def feature_radius(point: Vector) -> float:
-    return min(
-        ellipse_radius(point, face_centre_x - eye_offset_x, eye_centre_z, eye_radius_x, eye_radius_z),
-        ellipse_radius(point, face_centre_x + eye_offset_x, eye_centre_z, eye_radius_x, eye_radius_z),
-        ellipse_radius(point, face_centre_x, mouth_centre_z, mouth_radius_x, mouth_radius_z),
-    )
-
-
-neutral_samples = []
-for point in world_vertices:
-    face_radius = ellipse_radius(point, face_centre_x, face_centre_z, face_radius_x, face_radius_z)
-    if face_radius <= 0.92 and point.y < front_threshold and feature_radius(point) >= 1.35:
-        neutral_samples.append(point)
-
-coefficients = robust_surface_fit(neutral_samples)
-modified_vertices = 0
-maximum_displacement = 0.0
-for vertex, point in zip(main_mesh.data.vertices, world_vertices):
-    if point.y >= front_threshold:
-        continue
-    face_radius = ellipse_radius(point, face_centre_x, face_centre_z, face_radius_x, face_radius_z)
-    if face_radius > 1.02:
-        continue
-    radius = feature_radius(point)
-    weight = 1.0 - smooth_step(0.72, 1.28, radius)
-    if weight <= 0.0:
-        continue
-    target_forward = surface_forward(coefficients, point)
-    displacement = (target_forward - point.y) * weight
-    if abs(displacement) < 1.0e-7:
-        continue
-    changed = point.copy()
-    changed.y += displacement
-    vertex.co = matrix_world_inverse @ changed
-    modified_vertices += 1
-    maximum_displacement = max(maximum_displacement, abs(displacement))
-
-if modified_vertices < 100:
-    raise RuntimeError(f"Face smoothing selected too few vertices: {modified_vertices}")
-if maximum_displacement > extent * 0.065:
-    raise RuntimeError(
-        f"Unsafe face displacement {maximum_displacement:.6f} exceeds {extent * 0.065:.6f}"
-    )
-main_mesh.data.update()
-
 face_material, face_texture_node = create_face_material(texture_dir / "limijoy-face-neutral.png")
-main_mesh.data.materials.append(face_material)
-face_material_index = len(main_mesh.data.materials) - 1
-uv_layer = main_mesh.data.uv_layers.active or main_mesh.data.uv_layers.new(name="UVMap")
-face_polygons = 0
-for polygon in main_mesh.data.polygons:
-    centre_local = sum(
-        (main_mesh.data.vertices[index].co for index in polygon.vertices),
-        Vector((0.0, 0.0, 0.0)),
-    ) / len(polygon.vertices)
-    point = matrix_world @ centre_local
-    radius = ellipse_radius(point, face_centre_x, face_centre_z, face_radius_x, face_radius_z)
-    if point.y >= front_threshold or radius > 1.0:
-        continue
-    polygon.material_index = face_material_index
-    face_polygons += 1
-    for loop_index in polygon.loop_indices:
-        vertex = main_mesh.data.vertices[main_mesh.data.loops[loop_index].vertex_index]
-        world_point = matrix_world @ vertex.co
-        u_value = 0.5 + (world_point.x - face_centre_x) / (2.0 * face_radius_x)
-        v_value = 0.5 + (world_point.z - face_centre_z) / (2.0 * face_radius_z)
-        uv_layer.data[loop_index].uv = (
-            max(0.0, min(1.0, u_value)),
-            max(0.0, min(1.0, v_value)),
-        )
-
-if face_polygons < 100:
-    raise RuntimeError(f"Face material selected too few polygons: {face_polygons}")
-main_mesh.data.update()
+face_plate = create_face_plate(
+    armature=armature,
+    material=face_material,
+    centre_x=face_centre_x,
+    centre_z=face_centre_z,
+    radius_x=size.x * 0.238,
+    radius_z=size.z * 0.137,
+    boundary_forward=centre.y - size.y * 0.335,
+    depth=size.y * 0.172,
+)
+face_plate_vertex_count = len(face_plate.data.vertices)
+face_plate_polygon_count = len(face_plate.data.polygons)
 bpy.context.view_layer.update()
 
 for state in STATES:
@@ -404,6 +411,7 @@ prototype_path = OUTPUT / "glimmerkin-textured-face-prototype.glb"
 bpy.ops.object.select_all(action="DESELECT")
 armature.select_set(True)
 main_mesh.select_set(True)
+face_plate.select_set(True)
 bpy.context.view_layer.objects.active = main_mesh
 bpy.ops.export_scene.gltf(
     filepath=str(prototype_path),
@@ -450,16 +458,18 @@ report = {
     "maximum_rig_rest_delta": maximum_rig_delta,
     "source_vertex_groups": len(source_bone_names),
     "exported_vertex_groups": len(exported_group_names),
-    "modified_face_vertices": modified_vertices,
-    "face_material_polygons": face_polygons,
-    "maximum_face_displacement": maximum_displacement,
+    "modified_source_vertices": 0,
+    "face_plate_vertices": face_plate_vertex_count,
+    "face_plate_polygons": face_plate_polygon_count,
+    "face_plate_head_group": "Bone_033",
     "source_bounds": source_bounds,
     "exported_bounds": {
         "minimum": tuple(float(value) for value in exported_minimum),
         "maximum": tuple(float(value) for value in exported_maximum),
     },
     "states": list(STATES),
-    "body_topology_policy": "No remesh, decimation, or auto-rigging",
+    "body_topology_policy": "Source mesh untouched; no remesh, decimation, or auto-rigging",
+    "face_surface_policy": "Smooth skinned ellipsoidal cap covers fragmented baked facial pieces",
 }
 (OUTPUT / "prototype-report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(report, indent=2))
