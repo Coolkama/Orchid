@@ -298,7 +298,10 @@ def remove_baked_face_fragments(
     for face in edit_mesh.faces:
         point = matrix_world @ face.calc_center_median()
         radius = ellipse_radius(point, centre_x, centre_z, radius_x, radius_z)
-        if point.y < front_threshold and radius <= 1.015:
+        # Keep a generous untouched border under the cap.  Polygon-centre
+        # selection otherwise produces a saw-tooth hole exactly at the visible
+        # cap edge because the source triangles extend beyond their centroids.
+        if point.y < front_threshold and radius <= 0.90:
             face.select_set(True)
             selected += 1
     if selected < 100:
