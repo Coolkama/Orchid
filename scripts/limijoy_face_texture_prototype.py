@@ -404,8 +404,11 @@ render(scene, "00-original-baked-face.png")
 
 face_centre_x = centre.x
 face_centre_z = minimum.z + size.z * 0.565
-face_radius_x = size.x * 0.238
-face_radius_z = size.z * 0.137
+# Match the broad, softly squashed face opening on the canonical character
+# sheet.  Keeping the cap wider than it is tall also lets it hide the retained
+# cheek boundary without turning Limijoy's face into a circular mask.
+face_radius_x = size.x * 0.258
+face_radius_z = size.z * 0.130
 baked_face_polygons_removed = remove_baked_face_fragments(
     main_mesh,
     centre_x=face_centre_x,

@@ -19,12 +19,14 @@ from PIL import Image, ImageDraw
 TEXTURE_SIZE = 512
 SUPERSAMPLE = 4
 
-# Canonical sheet swatches sampled from limijoy-turnaround-sheet.png.
+# Canonical sheet swatches sampled from limijoy-turnaround-sheet.png.  The face
+# base is nudged slightly warmer so it matches the cream seen under the model's
+# existing lighting rather than reading as a grey-white mask.
 PALETTE = {
     "lime": (192, 202, 122),
     "leaf": (140, 168, 87),
     "sprout": (73, 99, 41),
-    "face": (238, 231, 182),
+    "face": (238, 231, 174),
     "cheek": (208, 219, 145),
     "mouth": (182, 116, 104),
     "eyes": (58, 48, 34),
