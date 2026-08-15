@@ -298,10 +298,10 @@ def remove_baked_face_fragments(
     for face in edit_mesh.faces:
         point = matrix_world @ face.calc_center_median()
         radius = ellipse_radius(point, centre_x, centre_z, radius_x, radius_z)
-        # Keep a generous untouched border under the cap.  Polygon-centre
-        # selection otherwise produces a saw-tooth hole exactly at the visible
-        # cap edge because the source triangles extend beyond their centroids.
-        if point.y < front_threshold and radius <= 0.90:
+        # The replacement cap is deliberately larger than this removal oval.
+        # That overlap lets us remove the visible baked cream rim while keeping
+        # polygon-centre selection from exposing a saw-tooth hole at the edge.
+        if point.y < front_threshold and radius <= 0.95:
             face.select_set(True)
             selected += 1
     if selected < 100:
@@ -407,14 +407,16 @@ face_centre_z = minimum.z + size.z * 0.565
 # Match the broad, softly squashed face opening on the canonical character
 # sheet.  Keeping the cap wider than it is tall also lets it hide the retained
 # cheek boundary without turning Limijoy's face into a circular mask.
-face_radius_x = size.x * 0.265
-face_radius_z = size.z * 0.135
+removal_radius_x = size.x * 0.265
+removal_radius_z = size.z * 0.135
+face_radius_x = size.x * 0.285
+face_radius_z = size.z * 0.145
 baked_face_polygons_removed = remove_baked_face_fragments(
     main_mesh,
     centre_x=face_centre_x,
     centre_z=face_centre_z,
-    radius_x=face_radius_x,
-    radius_z=face_radius_z,
+    radius_x=removal_radius_x,
+    radius_z=removal_radius_z,
     front_threshold=centre.y - size.y * 0.185,
 )
 face_material, face_texture_node = create_face_material(texture_dir / "limijoy-face-neutral.png")
@@ -425,12 +427,11 @@ face_plate = create_face_plate(
     centre_z=face_centre_z,
     radius_x=face_radius_x,
     radius_z=face_radius_z,
-    # Keep the whole cap just ahead of the source face envelope.  The rim is
-    # deliberately further forward than the retained cream boundary so no
-    # sliver of the baked face can reappear as the head turns.  A shallower
-    # curve preserves almost the same centre depth without reading as a mask.
-    boundary_forward=centre.y - size.y * 0.475,
-    depth=size.y * 0.065,
+    # Seat the oversized rim underneath the green hood opening.  The visible
+    # centre keeps the same depth, but the edge now disappears into the model
+    # instead of floating in front of the old cream face at oblique angles.
+    boundary_forward=centre.y - size.y * 0.442,
+    depth=size.y * 0.100,
 )
 face_plate_vertex_count = len(face_plate.data.vertices)
 face_plate_polygon_count = len(face_plate.data.polygons)
