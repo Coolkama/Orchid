@@ -1,8 +1,8 @@
 name: Limijoy blank-face action compatibility
 
 on:
-  pull_request:
-    branches: [main]
+  push:
+    branches: [blank-face-candidate-validation]
     paths:
       - 'assets/models/glimmerkin-blank-face-candidate.glb'
       - 'scripts/limijoy_rig_profiles.py'
