@@ -10,6 +10,7 @@ on:
       - 'scripts/limijoy_face_inplace_prototype.py'
       - 'scripts/limijoy_face_inplace_v2.py'
       - 'scripts/limijoy_face_inner_patch_v3.py'
+      - 'scripts/limijoy_face_inner_patch_v4.py'
       - 'scripts/limijoy_body_semantic_controls.py'
       - 'scripts/inspect_rig.py'
       - '.github/workflows/limijoy-face-texture-prototype.yml'
@@ -38,7 +39,7 @@ jobs:
       - name: Build recessed textured inner face
         run: |
           blender --background --python-exit-code 1 \
-            --python scripts/limijoy_face_inner_patch_v3.py -- \
+            --python scripts/limijoy_face_inner_patch_v4.py -- \
             --model=assets/models/glimmerkin.glb \
             --textures=output/limijoy-face-texture-prototype/textures
 
