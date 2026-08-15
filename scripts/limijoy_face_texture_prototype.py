@@ -407,8 +407,8 @@ face_centre_z = minimum.z + size.z * 0.565
 # Match the broad, softly squashed face opening on the canonical character
 # sheet.  Keeping the cap wider than it is tall also lets it hide the retained
 # cheek boundary without turning Limijoy's face into a circular mask.
-face_radius_x = size.x * 0.258
-face_radius_z = size.z * 0.130
+face_radius_x = size.x * 0.265
+face_radius_z = size.z * 0.135
 baked_face_polygons_removed = remove_baked_face_fragments(
     main_mesh,
     centre_x=face_centre_x,
@@ -425,11 +425,12 @@ face_plate = create_face_plate(
     centre_z=face_centre_z,
     radius_x=face_radius_x,
     radius_z=face_radius_z,
-    # Keep the whole cap just ahead of the source face envelope.  A shallow
-    # curve reads naturally from the ±35° head range while preventing old
-    # boundary triangles and cheek pieces from poking through at the rim.
-    boundary_forward=centre.y - size.y * 0.442,
-    depth=size.y * 0.085,
+    # Keep the whole cap just ahead of the source face envelope.  The rim is
+    # deliberately further forward than the retained cream boundary so no
+    # sliver of the baked face can reappear as the head turns.  A shallower
+    # curve preserves almost the same centre depth without reading as a mask.
+    boundary_forward=centre.y - size.y * 0.475,
+    depth=size.y * 0.065,
 )
 face_plate_vertex_count = len(face_plate.data.vertices)
 face_plate_polygon_count = len(face_plate.data.polygons)
