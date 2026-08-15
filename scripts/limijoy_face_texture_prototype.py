@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
+import bmesh
 import bpy
 import numpy as np
 from mathutils import Vector
@@ -289,21 +290,20 @@ def remove_baked_face_fragments(
     mesh_object.select_set(True)
     bpy.context.view_layer.objects.active = mesh_object
     matrix_world = mesh_object.matrix_world.copy()
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="DESELECT")
+    edit_mesh = bmesh.from_edit_mesh(mesh_object.data)
+    edit_mesh.faces.ensure_lookup_table()
     selected = 0
-    for polygon in mesh_object.data.polygons:
-        polygon.select = False
-        centre_local = sum(
-            (mesh_object.data.vertices[index].co for index in polygon.vertices),
-            Vector((0.0, 0.0, 0.0)),
-        ) / len(polygon.vertices)
-        point = matrix_world @ centre_local
+    for face in edit_mesh.faces:
+        point = matrix_world @ face.calc_center_median()
         radius = ellipse_radius(point, centre_x, centre_z, radius_x, radius_z)
         if point.y < front_threshold and radius <= 1.015:
-            polygon.select = True
+            face.select_set(True)
             selected += 1
     if selected < 100:
         raise RuntimeError(f"Baked-face removal selected too few polygons: {selected}")
-    bpy.ops.object.mode_set(mode="EDIT")
+    bmesh.update_edit_mesh(mesh_object.data, loop_triangles=False, destructive=False)
     bpy.ops.mesh.delete(type="FACE")
     bpy.ops.object.mode_set(mode="OBJECT")
     mesh_object.data.update()
