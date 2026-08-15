@@ -1,8 +1,9 @@
 """Rig profiles for Limijoy Meshy generations.
 
-Meshy can produce the same character with a slightly different UniRig bone
-count.  Limijoy behaviour code should target semantic roles instead of hard
-coding one generation's Bone_### identifiers.
+Meshy can produce the same character with a different UniRig bone count and can
+reuse Bone_### identifiers for completely different roles.  Limijoy behaviour
+code therefore targets semantic roles and resolves the concrete generation by
+both its semantic bone set and its expected joint count.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from typing import Mapping
 @dataclass(frozen=True)
 class LimijoyRigProfile:
     name: str
+    bone_count: int
     body: Mapping[str, str]
     right_arm: Mapping[str, str]
     left_arm: Mapping[str, str]
@@ -31,6 +33,7 @@ class LimijoyRigProfile:
 
 LEGACY_GLIMMERKIN = LimijoyRigProfile(
     name="legacy-glimmerkin-35",
+    bone_count=35,
     body={
         "torso": "Bone_015",
         "neck": "Bone_034",
@@ -55,6 +58,7 @@ LEGACY_GLIMMERKIN = LimijoyRigProfile(
 
 BLANK_FACE_CANDIDATE = LimijoyRigProfile(
     name="blank-face-candidate-28",
+    bone_count=28,
     body={
         "torso": "Bone_014",
         "neck": "Bone_027",
@@ -77,7 +81,39 @@ BLANK_FACE_CANDIDATE = LimijoyRigProfile(
     },
 )
 
-PROFILES = (LEGACY_GLIMMERKIN, BLANK_FACE_CANDIDATE)
+TPOSE_BLANK_FACE_CANDIDATE = LimijoyRigProfile(
+    name="tpose-blank-face-candidate-45",
+    bone_count=45,
+    body={
+        # Bone_015 is the low torso/root-follow segment.  Bone_014 provides the
+        # restrained chest follow used by the semantic look controller.
+        "torso": "Bone_014",
+        "neck": "Bone_018",
+        "head": "Bone_017",
+        "head_tip": "Bone_016",
+    },
+    # Anatomical right is viewer-left in the front reference image.
+    right_arm={
+        "girdle": "Bone_023",
+        "upper": "Bone_022",
+        "elbow": "Bone_021",
+        "wrist": "Bone_020",
+        "hand": "Bone_019",
+    },
+    left_arm={
+        "girdle": "Bone_028",
+        "upper": "Bone_027",
+        "elbow": "Bone_026",
+        "wrist": "Bone_025",
+        "hand": "Bone_024",
+    },
+)
+
+PROFILES = (
+    LEGACY_GLIMMERKIN,
+    BLANK_FACE_CANDIDATE,
+    TPOSE_BLANK_FACE_CANDIDATE,
+)
 
 
 def resolve_rig_profile(bone_names) -> LimijoyRigProfile:
@@ -85,17 +121,19 @@ def resolve_rig_profile(bone_names) -> LimijoyRigProfile:
     matches = [
         profile
         for profile in PROFILES
-        if profile.required_bones.issubset(names)
+        if len(names) == profile.bone_count
+        and profile.required_bones.issubset(names)
     ]
     if len(matches) == 1:
         return matches[0]
     if len(matches) > 1:
-        # Prefer the most specific profile if a future generation happens to
-        # contain a superset of another generation's semantic controls.
         return max(matches, key=lambda profile: len(profile.required_bones))
 
     details = ", ".join(
-        f"{profile.name}: missing {sorted(profile.required_bones - names)}"
+        (
+            f"{profile.name}: expected {profile.bone_count} bones, got {len(names)}; "
+            f"missing {sorted(profile.required_bones - names)}"
+        )
         for profile in PROFILES
     )
     raise KeyError(f"No Limijoy rig profile matches this armature ({details})")
@@ -104,6 +142,7 @@ def resolve_rig_profile(bone_names) -> LimijoyRigProfile:
 __all__ = [
     "BLANK_FACE_CANDIDATE",
     "LEGACY_GLIMMERKIN",
+    "TPOSE_BLANK_FACE_CANDIDATE",
     "LimijoyRigProfile",
     "PROFILES",
     "resolve_rig_profile",
