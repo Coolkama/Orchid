@@ -422,8 +422,11 @@ face_plate = create_face_plate(
     centre_z=face_centre_z,
     radius_x=face_radius_x,
     radius_z=face_radius_z,
-    boundary_forward=centre.y - size.y * 0.335,
-    depth=size.y * 0.172,
+    # Keep the whole cap just ahead of the source face envelope.  A shallow
+    # curve reads naturally from the ±35° head range while preventing old
+    # boundary triangles and cheek pieces from poking through at the rim.
+    boundary_forward=centre.y - size.y * 0.442,
+    depth=size.y * 0.085,
 )
 face_plate_vertex_count = len(face_plate.data.vertices)
 face_plate_polygon_count = len(face_plate.data.polygons)
