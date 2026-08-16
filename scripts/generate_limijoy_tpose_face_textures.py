@@ -3,7 +3,8 @@
 The six expression textures are authored image assets derived from the canonical
 Limijoy character sheet. This script performs no procedural facial drawing: it
 loads the committed RGBA PNG overlays, normalises them to the 512 px review
-contract, and emits the manifest/atlas expected by the Blender review pipeline.
+contract, applies the approved horizontal proportion adjustment, and emits the
+manifest/atlas expected by the Blender review pipeline.
 """
 
 from __future__ import annotations
@@ -20,6 +21,17 @@ ROOT = Path(__file__).resolve().parents[1]
 TEXTURE_SIZE = 512
 STATES = ("neutral", "blink", "happy", "curious", "sad", "determined")
 SOURCE_DIR = ROOT / "assets" / "Ace-art" / "character-sheet"
+ART_HORIZONTAL_SCALE = 0.95
+
+
+def narrow_overlay(image: Image.Image) -> Image.Image:
+    """Narrow authored facial features by 5% without changing their height."""
+    target_width = max(1, int(round(TEXTURE_SIZE * ART_HORIZONTAL_SCALE)))
+    narrowed = image.resize((target_width, TEXTURE_SIZE), Image.Resampling.LANCZOS)
+    canvas = Image.new("RGBA", (TEXTURE_SIZE, TEXTURE_SIZE), (0, 0, 0, 0))
+    x = (TEXTURE_SIZE - target_width) // 2
+    canvas.alpha_composite(narrowed, (x, 0))
+    return canvas
 
 
 def load_overlay(state: str) -> Image.Image:
@@ -30,7 +42,7 @@ def load_overlay(state: str) -> Image.Image:
     image = Image.open(source).convert("RGBA")
     if image.size != (TEXTURE_SIZE, TEXTURE_SIZE):
         image = image.resize((TEXTURE_SIZE, TEXTURE_SIZE), Image.Resampling.LANCZOS)
-    return image
+    return narrow_overlay(image)
 
 
 def main() -> None:
@@ -62,6 +74,8 @@ def main() -> None:
     manifest = {
         "revision": "character-sheet-authored-full-face-v1",
         "texture_size": TEXTURE_SIZE,
+        "art_horizontal_scale": ART_HORIZONTAL_SCALE,
+        "effective_face_width_scale_with_uv": 0.855 * ART_HORIZONTAL_SCALE,
         "states": overlays,
         "source_dir": str(SOURCE_DIR.relative_to(ROOT)),
         "source_policy": "facial artwork derived from canonical Limijoy character sheet; no procedural primitive drawing",
