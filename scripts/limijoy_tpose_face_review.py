@@ -133,6 +133,15 @@ def identify_native_face_polygons(mesh_object, *, minimum, maximum, source_image
 
 
 def configure_face_uv(mesh_object, face_polygons: list[int]) -> dict[str, object]:
+    """Project the square face artwork without changing its physical aspect ratio.
+
+    The earlier review independently normalised X and Z to 0..1. Because the
+    detected cream patch is about 1.57x wider than it is tall, that mapping
+    stretched the artwork horizontally (equivalently, squashed it vertically).
+    Use one common world-space extent for both UV axes instead, centred on the
+    native face bounds. Equal distances in the source texture now remain equal
+    distances on the model.
+    """
     mesh = mesh_object.data
     source_uv = mesh.uv_layers.active
     matrix_world = mesh_object.matrix_world
@@ -152,6 +161,10 @@ def configure_face_uv(mesh_object, face_polygons: list[int]) -> dict[str, object
     if width <= 1.0e-6 or height <= 1.0e-6:
         raise RuntimeError("Detected face bounds are degenerate")
 
+    centre_x = (min_x + max_x) * 0.5
+    centre_z = (min_z + max_z) * 0.5
+    aspect_extent = max(width, height)
+
     face_uv = mesh.uv_layers.get(FACE_UV_NAME) or mesh.uv_layers.new(name=FACE_UV_NAME)
     for item in face_uv.data:
         item.uv = (0.0, 0.0)
@@ -165,8 +178,8 @@ def configure_face_uv(mesh_object, face_polygons: list[int]) -> dict[str, object
             vertex_index = mesh.loops[loop_index].vertex_index
             point = matrix_world @ mesh.vertices[vertex_index].co
             face_uv.data[loop_index].uv = (
-                padding + usable * ((point.x - min_x) / width),
-                padding + usable * ((point.z - min_z) / height),
+                padding + usable * (0.5 + (point.x - centre_x) / aspect_extent),
+                padding + usable * (0.5 + (point.z - centre_z) / aspect_extent),
             )
             loops += 1
     mesh.uv_layers.active = source_uv
@@ -177,6 +190,8 @@ def configure_face_uv(mesh_object, face_polygons: list[int]) -> dict[str, object
         "face_width": float(width),
         "face_height": float(height),
         "face_width_to_height": float(width / height),
+        "face_uv_aspect_extent": float(aspect_extent),
+        "face_uv_aspect_preserved": True,
     }
 
 
