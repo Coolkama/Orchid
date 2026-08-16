@@ -133,14 +133,14 @@ def identify_native_face_polygons(mesh_object, *, minimum, maximum, source_image
 
 
 def configure_face_uv(mesh_object, face_polygons: list[int]) -> dict[str, object]:
-    """Project the square face artwork without changing its physical aspect ratio.
+    """Project face artwork with preserved proportions and tuned placement.
 
-    The earlier review independently normalised X and Z to 0..1. Because the
-    detected cream patch is about 1.57x wider than it is tall, that mapping
-    stretched the artwork horizontally (equivalently, squashed it vertically).
-    Use one common world-space extent for both UV axes instead, centred on the
-    native face bounds. Equal distances in the source texture now remain equal
-    distances on the model.
+    X and Z share one world-space extent so the source art keeps its physical
+    aspect ratio. The authored features are additionally narrowed to 90% of
+    their previous width and shifted downward without changing their height.
+    Because this function maps model positions to source UVs, narrowing the
+    visible artwork requires the reciprocal horizontal sampling scale, while a
+    positive V sampling offset moves the visible artwork downward on the model.
     """
     mesh = mesh_object.data
     source_uv = mesh.uv_layers.active
@@ -171,6 +171,10 @@ def configure_face_uv(mesh_object, face_polygons: list[int]) -> dict[str, object
 
     padding = 0.035
     usable = 1.0 - padding * 2.0
+    visible_width_scale = 0.90
+    horizontal_sample_scale = 1.0 / visible_width_scale
+    downward_sample_offset = 0.080
+
     loops = 0
     for polygon_index in face_polygons:
         polygon = mesh.polygons[polygon_index]
@@ -178,8 +182,12 @@ def configure_face_uv(mesh_object, face_polygons: list[int]) -> dict[str, object
             vertex_index = mesh.loops[loop_index].vertex_index
             point = matrix_world @ mesh.vertices[vertex_index].co
             face_uv.data[loop_index].uv = (
-                padding + usable * (0.5 + (point.x - centre_x) / aspect_extent),
-                padding + usable * (0.5 + (point.z - centre_z) / aspect_extent),
+                padding
+                + usable
+                * (0.5 + ((point.x - centre_x) / aspect_extent) * horizontal_sample_scale),
+                padding
+                + usable
+                * (0.5 + (point.z - centre_z) / aspect_extent + downward_sample_offset),
             )
             loops += 1
     mesh.uv_layers.active = source_uv
@@ -192,6 +200,8 @@ def configure_face_uv(mesh_object, face_polygons: list[int]) -> dict[str, object
         "face_width_to_height": float(width / height),
         "face_uv_aspect_extent": float(aspect_extent),
         "face_uv_aspect_preserved": True,
+        "face_visible_width_scale": visible_width_scale,
+        "face_downward_uv_shift": downward_sample_offset,
     }
 
 
@@ -352,9 +362,9 @@ report = {
     "states": list(STATES),
     "head_turns": turns,
     "art_revision": {
-        "open_eye_texture_box": [52, 112],
-        "previous_open_eye_texture_box": [78, 112],
-        "mouth_vertical_shift_pixels": 30,
+        "overlay_visible_width_scale": 0.90,
+        "overlay_downward_uv_shift": 0.080,
+        "vertical_scale": 1.00,
     },
     "overlay_policy": "RGBA features over native cream material; native face geometry and shading retained",
     **face_report,
