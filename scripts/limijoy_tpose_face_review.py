@@ -132,15 +132,54 @@ def identify_native_face_polygons(mesh_object, *, minimum, maximum, source_image
     return selected
 
 
-def configure_face_uv(mesh_object, face_polygons: list[int]) -> dict[str, object]:
+def expand_face_uv_polygons(mesh_object, face_polygons: list[int], rings: int = 1) -> list[int]:
+    """Expand only the UV-assignment mask around the detected cream patch.
+
+    The colour detector can omit isolated lower-face polygons where the native
+    texture contains seams, dirt or dark edge pixels. Once the authored mouth
+    was moved down, those omissions appeared as triangular bites in the mouth.
+    Expanding the UV mask by one topological ring gives those neighbouring
+    polygons coherent face UVs while keeping the original cream selection as
+    the source of the projection bounds.
+    """
+    mesh = mesh_object.data
+    selected = set(face_polygons)
+    frontier = set(face_polygons)
+    vertex_to_polygons: dict[int, set[int]] = {}
+
+    for polygon in mesh.polygons:
+        for vertex_index in polygon.vertices:
+            vertex_to_polygons.setdefault(vertex_index, set()).add(polygon.index)
+
+    for _ in range(max(0, rings)):
+        neighbours: set[int] = set()
+        for polygon_index in frontier:
+            for vertex_index in mesh.polygons[polygon_index].vertices:
+                neighbours.update(vertex_to_polygons.get(vertex_index, ()))
+        neighbours.difference_update(selected)
+        if not neighbours:
+            break
+        selected.update(neighbours)
+        frontier = neighbours
+
+    return sorted(selected)
+
+
+def configure_face_uv(
+    mesh_object,
+    face_polygons: list[int],
+    uv_polygons: list[int] | None = None,
+) -> dict[str, object]:
     """Project face artwork with preserved proportions and tuned placement.
 
     X and Z share one world-space extent so the source art keeps its physical
-    aspect ratio. The authored features are additionally narrowed to 90% of
-    their previous width and shifted downward without changing their height.
-    Because this function maps model positions to source UVs, narrowing the
-    visible artwork requires the reciprocal horizontal sampling scale, while a
-    positive V sampling offset moves the visible artwork downward on the model.
+    aspect ratio. The authored features are narrowed to 85.5% of the original
+    aspect-corrected width (about another 5% narrower than the previous 90%
+    pass) and remain shifted downward without changing their height.
+
+    The projection bounds come only from the reliably detected cream patch.
+    UVs may additionally be written to a one-ring-expanded polygon mask so
+    small holes in colour detection cannot clip low facial features.
     """
     mesh = mesh_object.data
     source_uv = mesh.uv_layers.active
@@ -164,6 +203,7 @@ def configure_face_uv(mesh_object, face_polygons: list[int]) -> dict[str, object
     centre_x = (min_x + max_x) * 0.5
     centre_z = (min_z + max_z) * 0.5
     aspect_extent = max(width, height)
+    assigned_polygons = uv_polygons if uv_polygons is not None else face_polygons
 
     face_uv = mesh.uv_layers.get(FACE_UV_NAME) or mesh.uv_layers.new(name=FACE_UV_NAME)
     for item in face_uv.data:
@@ -171,12 +211,12 @@ def configure_face_uv(mesh_object, face_polygons: list[int]) -> dict[str, object
 
     padding = 0.035
     usable = 1.0 - padding * 2.0
-    visible_width_scale = 0.90
+    visible_width_scale = 0.855
     horizontal_sample_scale = 1.0 / visible_width_scale
     downward_sample_offset = 0.080
 
     loops = 0
-    for polygon_index in face_polygons:
+    for polygon_index in assigned_polygons:
         polygon = mesh.polygons[polygon_index]
         for loop_index in polygon.loop_indices:
             vertex_index = mesh.loops[loop_index].vertex_index
@@ -194,6 +234,8 @@ def configure_face_uv(mesh_object, face_polygons: list[int]) -> dict[str, object
     mesh.update()
     return {
         "face_polygons": len(face_polygons),
+        "face_uv_polygons": len(assigned_polygons),
+        "face_uv_extra_polygons": len(assigned_polygons) - len(face_polygons),
         "face_uv_loops": loops,
         "face_width": float(width),
         "face_height": float(height),
@@ -317,7 +359,8 @@ configure_render(scene, minimum, maximum)
 render(scene, "00-native-blank.png")
 
 face_polygons = identify_native_face_polygons(main_mesh, minimum=minimum, maximum=maximum, source_image=source_image)
-face_report = configure_face_uv(main_mesh, face_polygons)
+face_uv_polygons = expand_face_uv_polygons(main_mesh, face_polygons, rings=1)
+face_report = configure_face_uv(main_mesh, face_polygons, face_uv_polygons)
 overlay = install_overlay(material, principled, texture_dir / "limijoy-face-neutral-overlay.png")
 
 if len(main_mesh.data.vertices) != source_vertices or len(main_mesh.data.polygons) != source_polygons:
@@ -362,9 +405,11 @@ report = {
     "states": list(STATES),
     "head_turns": turns,
     "art_revision": {
-        "overlay_visible_width_scale": 0.90,
+        "overlay_visible_width_scale": 0.855,
         "overlay_downward_uv_shift": 0.080,
         "vertical_scale": 1.00,
+        "uv_mask_expansion_rings": 1,
+        "uv_mask_reason": "prevent lower mouth clipping on cream-patch polygons missed by colour detection",
     },
     "overlay_policy": "RGBA features over native cream material; native face geometry and shading retained",
     **face_report,
