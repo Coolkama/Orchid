@@ -138,9 +138,9 @@ def expand_face_uv_polygons(mesh_object, face_polygons: list[int], rings: int = 
     The colour detector can omit isolated lower-face polygons where the native
     texture contains seams, dirt or dark edge pixels. Once the authored mouth
     was moved down, those omissions appeared as triangular bites in the mouth.
-    Expanding the UV mask by one topological ring gives those neighbouring
-    polygons coherent face UVs while keeping the original cream selection as
-    the source of the projection bounds.
+    Expanding the UV mask topologically gives those neighbouring polygons
+    coherent face UVs while keeping the original cream selection as the source
+    of the projection bounds.
     """
     mesh = mesh_object.data
     selected = set(face_polygons)
@@ -178,8 +178,8 @@ def configure_face_uv(
     pass) and remain shifted downward without changing their height.
 
     The projection bounds come only from the reliably detected cream patch.
-    UVs may additionally be written to a one-ring-expanded polygon mask so
-    small holes in colour detection cannot clip low facial features.
+    UVs may additionally be written to an expanded polygon mask so small holes
+    in colour detection cannot clip low facial features.
     """
     mesh = mesh_object.data
     source_uv = mesh.uv_layers.active
@@ -359,7 +359,7 @@ configure_render(scene, minimum, maximum)
 render(scene, "00-native-blank.png")
 
 face_polygons = identify_native_face_polygons(main_mesh, minimum=minimum, maximum=maximum, source_image=source_image)
-face_uv_polygons = expand_face_uv_polygons(main_mesh, face_polygons, rings=1)
+face_uv_polygons = expand_face_uv_polygons(main_mesh, face_polygons, rings=2)
 face_report = configure_face_uv(main_mesh, face_polygons, face_uv_polygons)
 overlay = install_overlay(material, principled, texture_dir / "limijoy-face-neutral-overlay.png")
 
@@ -408,7 +408,7 @@ report = {
         "overlay_visible_width_scale": 0.855,
         "overlay_downward_uv_shift": 0.080,
         "vertical_scale": 1.00,
-        "uv_mask_expansion_rings": 1,
+        "uv_mask_expansion_rings": 2,
         "uv_mask_reason": "prevent lower mouth clipping on cream-patch polygons missed by colour detection",
     },
     "overlay_policy": "RGBA features over native cream material; native face geometry and shading retained",
