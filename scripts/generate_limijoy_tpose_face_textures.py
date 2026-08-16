@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import binascii
 import io
 import json
 import math
@@ -30,12 +31,43 @@ SOURCE_DIR = ROOT / "assets" / "face-art" / "generated-study"
 SOURCE_GLOB = "limijoy-generated-faces.b64.*"
 
 
+def _decode_transport_parts(parts: list[Path]) -> bytes:
+    """Decode one or more independently padded base64 blocks in filename order.
+
+    The connector transport may have split a base64 block across several files,
+    and some earlier blocks are independently padded. Accumulate until padding
+    marks the end of a block, decode it, then continue. This preserves the exact
+    original ZIP bytes while allowing the repository-only text transport.
+    """
+    decoded = bytearray()
+    pending = ""
+
+    for part in parts:
+        chunk = "".join(part.read_text(encoding="ascii").split())
+        if not chunk:
+            continue
+        pending += chunk
+        if "=" in chunk:
+            try:
+                decoded.extend(base64.b64decode(pending, validate=True))
+            except binascii.Error as exc:
+                raise ValueError(f"Invalid generated-face transport ending at {part.name}: {exc}") from exc
+            pending = ""
+
+    if pending:
+        try:
+            decoded.extend(base64.b64decode(pending, validate=True))
+        except binascii.Error as exc:
+            raise ValueError(f"Invalid final generated-face transport block: {exc}") from exc
+
+    return bytes(decoded)
+
+
 def load_study_archive() -> zipfile.ZipFile:
     parts = sorted(SOURCE_DIR.glob(SOURCE_GLOB))
     if not parts:
         raise FileNotFoundError(f"No generated face study parts found in {SOURCE_DIR}")
-    encoded = "".join(part.read_text(encoding="ascii").strip() for part in parts)
-    payload = base64.b64decode(encoded, validate=True)
+    payload = _decode_transport_parts(parts)
     return zipfile.ZipFile(io.BytesIO(payload), "r")
 
 
