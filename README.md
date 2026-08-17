@@ -6,6 +6,20 @@ Used for testing procedural modelling, rendering, rigging and animation workflow
 
 Work in this repository is experimental and subject to change.
 
+## Current Limijoy handoff
+
+The current Limijoy staging state is documented in [`HANDOFF.md`](HANDOFF.md).
+
+The important current baseline is the **45-bone blank-face keeper** with the approved skinned texture face shell. The exported runtime GLB has been re-imported and visually validated, and that keeper/face system is now running in the Android Limijoy branch.
+
+Current device feedback after runtime promotion:
+
+- face appearance and placement approved;
+- Carry reads correctly with palms up;
+- Wave is substantially improved after correcting hand-forward to use the main finger chains (`Bone_044` / `Bone_036`) rather than the thumb-side branches;
+- one Push left-arm fallback/jump remains deliberately parked until a real pushable prop exists;
+- next animation work is a genuine sleeping body pose, followed by walking/locomotion on the current 45-bone keeper, especially for mini mode.
+
 ## Headless Blender pipeline
 
 The first milestone proved a fully headless Blender workflow on GitHub Actions:
@@ -53,7 +67,7 @@ The working rotation convention observed across the investigated rig is X for fo
 
 ## Validated locomotion baseline
 
-A complete in-place walking foundation has now been visually validated. The current implementation is `scripts/limijoy_first_step.py`, rendered by `.github/workflows/limijoy-first-step.yml`.
+A complete in-place walking foundation was visually validated during the earlier rig work. The implementation is `scripts/limijoy_first_step.py`, rendered by `.github/workflows/limijoy-first-step.yml`.
 
 The baseline includes:
 
@@ -66,7 +80,7 @@ The baseline includes:
 - subtle alternating torso weight shift and yaw using `Bone_014` and `Bone_015`;
 - subtle counter-roll through `Bone_034` to keep the head visually stable.
 
-The grounded walk produced by commit `4c6928faeaf1e61be34ccc780e21ab5a78234272` is the validated locomotion baseline and should be preserved when experimenting with later movement layers.
+The grounded walk produced by commit `4c6928faeaf1e61be34ccc780e21ab5a78234272` remains a useful **historical locomotion reference**. It must not be treated as the final current walk: walking still needs to be revalidated on the approved 45-bone keeper and then integrated into Limijoy.
 
 ### Animation layering direction
 
@@ -78,6 +92,6 @@ The intended movement stack is therefore:
 
 1. **Locomotion base** — legs, feet, stance contact, body rise and weight transfer.
 2. **Upper-body behaviour** — optional arm swing, carrying, reaching and gestures.
-3. **Attention and expression** — independent head/neck looking and later facial behaviour.
+3. **Attention and expression** — independent head/neck looking and facial behaviour.
 
 This separation is important for the eventual interactive character, where locomotion and actions need to combine rather than exist only as fixed monolithic animation clips.
