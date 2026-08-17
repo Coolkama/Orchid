@@ -1,0 +1,37 @@
+name: Prototype tail
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'assets/models/**'
+      - 'scripts/prototype_tail.py'
+      - '.github/workflows/prototype-tail.yml'
+  workflow_dispatch:
+
+jobs:
+  prototype-tail:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install Blender
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender python3-numpy libegl1 libgl1 libglx-mesa0 libopengl0 mesa-utils
+          blender --version
+      - name: Extend rig and animate tail
+        run: |
+          blender --background --python-exit-code 1 --python scripts/prototype_tail.py -- --model=assets/models/glimmerkin.glb
+      - name: Show report
+        run: |
+          cat output/prototype-tail/report.json
+          ls -lh output/prototype-tail
+      - name: Upload tail proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchid-prototype-tail
+          path: output/prototype-tail/
+          retention-days: 7
+          if-no-files-found: error

@@ -1,0 +1,33 @@
+name: Limijoy left-arm parity
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'assets/models/**'
+      - 'scripts/limijoy_arm_semantic_controls.py'
+      - 'scripts/limijoy_left_arm_parity.py'
+      - '.github/workflows/limijoy-left-arm-parity.yml'
+  workflow_dispatch:
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install render tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender python3-numpy imagemagick libegl1 libgl1 libglx-mesa0 libopengl0 mesa-utils
+      - name: Render bilateral semantic-arm poses
+        run: blender --background --python-exit-code 1 --python scripts/limijoy_left_arm_parity.py -- --model=assets/models/glimmerkin.glb
+      - name: Assemble parity sheets
+        run: |
+          montage output/limijoy-left-arm-parity/stills/*_front.png -thumbnail 300x300 -tile 6x3 -geometry +8+30 -background '#20202a' -fill white -pointsize 16 -set label '%t' output/limijoy-left-arm-parity/parity-sheet-front.png
+          montage output/limijoy-left-arm-parity/stills/*_three-quarter.png -thumbnail 300x300 -tile 6x3 -geometry +8+30 -background '#20202a' -fill white -pointsize 16 -set label '%t' output/limijoy-left-arm-parity/parity-sheet-three-quarter.png
+      - name: Upload bilateral parity diagnostic
+        uses: actions/upload-artifact@v4
+        with:
+          name: limijoy-left-arm-parity
+          path: output/limijoy-left-arm-parity/
+          retention-days: 14
+          if-no-files-found: error

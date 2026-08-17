@@ -1,0 +1,77 @@
+name: Limijoy textured-face prototype
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'assets/models/glimmerkin.glb'
+      - 'scripts/generate_limijoy_face_textures.py'
+      - 'scripts/limijoy_face_texture_prototype.py'
+      - 'scripts/limijoy_face_inplace_prototype.py'
+      - 'scripts/limijoy_face_inplace_v2.py'
+      - 'scripts/limijoy_face_inner_patch_v3.py'
+      - 'scripts/limijoy_face_inner_patch_v4.py'
+      - 'scripts/limijoy_face_inner_patch_v5.py'
+      - 'scripts/limijoy_body_semantic_controls.py'
+      - 'scripts/inspect_rig.py'
+      - '.github/workflows/limijoy-face-texture-prototype.yml'
+  workflow_dispatch:
+
+jobs:
+  prototype:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Blender and image tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender python3-numpy python3-pil imagemagick libegl1 libgl1 libglx-mesa0 libopengl0 mesa-utils
+          blender --version
+
+      - name: Generate character-sheet face states
+        run: |
+          python3 scripts/generate_limijoy_face_textures.py \
+            --output output/limijoy-face-texture-prototype/textures
+
+      - name: Build recessed textured inner face
+        run: |
+          blender --background --python-exit-code 1 \
+            --python scripts/limijoy_face_inner_patch_v5.py -- \
+            --model=assets/models/glimmerkin.glb \
+            --textures=output/limijoy-face-texture-prototype/textures
+
+      - name: Build labelled comparison sheet
+        run: |
+          montage output/limijoy-face-texture-prototype/renders/*.png \
+            -thumbnail 440x440 \
+            -tile 3x \
+            -geometry +18+38 \
+            -background '#17151d' \
+            -fill '#f5f0e8' \
+            -stroke none \
+            -pointsize 20 \
+            -set label '%t' \
+            output/limijoy-face-texture-prototype/face-comparison.png
+
+      - name: Inspect exported rig contract
+        run: |
+          blender --background --python-exit-code 1 \
+            --python scripts/inspect_rig.py -- \
+            --model=output/limijoy-face-texture-prototype/glimmerkin-textured-face-prototype.glb
+
+      - name: List generated files
+        run: find output/limijoy-face-texture-prototype output/rig-inspection -maxdepth 2 -type f -printf '%p %k KB\n' | sort
+
+      - name: Upload prototype
+        uses: actions/upload-artifact@v4
+        with:
+          name: limijoy-textured-face-prototype
+          path: |
+            output/limijoy-face-texture-prototype/
+            output/rig-inspection/
+          retention-days: 7
+          if-no-files-found: error

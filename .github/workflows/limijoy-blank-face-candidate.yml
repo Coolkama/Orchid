@@ -1,0 +1,90 @@
+name: Limijoy blank-face candidate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'assets/models/glimmerkin-blank-face-candidate.glb'
+      - 'scripts/generate_limijoy_face_textures.py'
+      - 'scripts/limijoy_blank_face_candidate.py'
+      - 'scripts/limijoy_rig_profiles.py'
+      - 'scripts/inspect_rig.py'
+      - '.github/workflows/limijoy-blank-face-candidate.yml'
+  workflow_dispatch:
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Blender and image tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender python3-numpy python3-pil imagemagick libegl1 libgl1 libglx-mesa0 libopengl0 mesa-utils
+          blender --version
+
+      - name: Verify candidate model is present
+        run: |
+          test -f assets/models/glimmerkin-blank-face-candidate.glb || {
+            echo "::error::Upload the new Meshy GLB to assets/models/glimmerkin-blank-face-candidate.glb"
+            exit 1
+          }
+
+      - name: Generate expression textures
+        run: |
+          python3 scripts/generate_limijoy_face_textures.py \
+            --output output/limijoy-blank-face-candidate/textures
+
+      - name: Render expressions on native blank face
+        id: render_candidate
+        continue-on-error: true
+        run: |
+          blender --background --python-exit-code 1 \
+            --python scripts/limijoy_blank_face_candidate.py -- \
+            --model=assets/models/glimmerkin-blank-face-candidate.glb \
+            --textures=output/limijoy-blank-face-candidate/textures
+
+      - name: Verify render/export outputs exist
+        run: |
+          test -f output/limijoy-blank-face-candidate/renders/10-neutral-front.png
+          test -f output/limijoy-blank-face-candidate/renders/10-blink-front.png
+          test -f output/limijoy-blank-face-candidate/renders/20-neutral-head-right.png
+          test -f output/limijoy-blank-face-candidate/glimmerkin-blank-face-textured.glb
+
+      - name: Build labelled comparison sheet
+        run: |
+          montage output/limijoy-blank-face-candidate/renders/*.png \
+            -thumbnail 440x440 \
+            -tile 3x \
+            -geometry +18+38 \
+            -background '#17151d' \
+            -fill '#f5f0e8' \
+            -stroke none \
+            -pointsize 20 \
+            -set label '%t' \
+            output/limijoy-blank-face-candidate/face-comparison.png
+
+      - name: Inspect exported rig contract
+        run: |
+          blender --background --python-exit-code 1 \
+            --python scripts/inspect_rig.py -- \
+            --model=output/limijoy-blank-face-candidate/glimmerkin-blank-face-textured.glb
+
+      - name: List generated files
+        run: |
+          find output/limijoy-blank-face-candidate output/rig-inspection \
+            -maxdepth 2 -type f -printf '%p %k KB\n' | sort
+
+      - name: Upload candidate prototype
+        uses: actions/upload-artifact@v4
+        with:
+          name: limijoy-blank-face-candidate
+          path: |
+            output/limijoy-blank-face-candidate/
+            output/rig-inspection/
+          retention-days: 7
+          if-no-files-found: error

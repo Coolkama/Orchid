@@ -1,0 +1,40 @@
+name: Limijoy semantic actions
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'assets/models/**'
+      - 'scripts/limijoy_arm_semantic_controls.py'
+      - 'scripts/limijoy_body_semantic_controls.py'
+      - 'scripts/limijoy_semantic_actions.py'
+      - 'scripts/limijoy_semantic_action_showcase.py'
+      - '.github/workflows/limijoy-semantic-actions.yml'
+  workflow_dispatch:
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install render tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender python3-numpy ffmpeg imagemagick libegl1 libgl1 libglx-mesa0 libopengl0 mesa-utils
+      - name: Render semantic action showcase
+        run: blender --background --python-exit-code 1 --python scripts/limijoy_semantic_action_showcase.py -- --model=assets/models/glimmerkin.glb
+      - name: Assemble peak-pose sheet
+        run: montage output/limijoy-semantic-actions/peak-stills/*.png -thumbnail 360x360 -tile 3x2 -geometry +10+32 -background '#20202a' -fill white -pointsize 18 -set label '%t' output/limijoy-semantic-actions/semantic-action-sheet.png
+      - name: Upload semantic action showcase
+        uses: actions/upload-artifact@v4
+        with:
+          name: limijoy-semantic-actions
+          path: |
+            output/limijoy-semantic-actions/preview.mp4
+            output/limijoy-semantic-actions/preview.gif
+            output/limijoy-semantic-actions/action_report.json
+            output/limijoy-semantic-actions/README.md
+            output/limijoy-semantic-actions/semantic-action-showcase.blend
+            output/limijoy-semantic-actions/semantic-action-sheet.png
+            output/limijoy-semantic-actions/peak-stills/
+          retention-days: 14
+          if-no-files-found: error
