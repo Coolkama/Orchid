@@ -1,0 +1,49 @@
+name: Cleanup Actions storage
+
+on:
+  push:
+    branches: ["actions-storage-cleanup"]
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Keep newest artifact of each name and delete older artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          mapfile -t old_artifacts < <(
+            gh api --paginate "repos/$repo/actions/artifacts?per_page=100" \
+              --jq '.artifacts[] | [.name, .id] | @tsv' |
+            awk -F '\t' '!seen[$1]++ { next } { print $2 }'
+          )
+          echo "Deleting ${#old_artifacts[@]} old artifact(s); newest artifact for each name is retained."
+          for id in "${old_artifacts[@]}"; do
+            gh api --method DELETE "repos/$repo/actions/artifacts/$id" || true
+          done
+
+      - name: Keep newest 10 workflow runs and delete older completed runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          mapfile -t old_runs < <(
+            gh api --paginate "repos/$repo/actions/runs?per_page=100" \
+              --jq '.workflow_runs[] | [.id, .status] | @tsv' |
+            awk -F '\t' 'NR > 10 && $2 == "completed" { print $1 }'
+          )
+          echo "Deleting ${#old_runs[@]} old completed workflow run(s); newest 10 runs are retained."
+          for id in "${old_runs[@]}"; do
+            gh api --method DELETE "repos/$repo/actions/runs/$id" || true
+          done
