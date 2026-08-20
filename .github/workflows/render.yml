@@ -35,5 +35,5 @@ jobs:
         with:
           name: orchid-render-proof
           path: output/
-          retention-days: 3
+          retention-days: 1
           if-no-files-found: error
