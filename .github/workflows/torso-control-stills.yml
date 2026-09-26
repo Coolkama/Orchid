@@ -1,0 +1,25 @@
+name: Torso control stills
+on:
+  pull_request:
+    branches: [main]
+    paths: ['scripts/torso_control_stills.py','.github/workflows/torso-control-stills.yml','assets/models/glimmerkin.glb']
+  workflow_dispatch:
+jobs:
+  torso-control-stills:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Blender
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender python3-numpy libegl1 libgl1 libglx-mesa0 libopengl0 mesa-utils
+      - name: Render upper-body control diagnostic
+        run: blender --background --python-exit-code 1 --python scripts/torso_control_stills.py -- --model=assets/models/glimmerkin.glb
+      - name: Upload diagnostic stills
+        uses: actions/upload-artifact@v4
+        with:
+          name: limijoy-torso-control-stills
+          path: output/torso-control-stills/*.png
+          retention-days: 7
+          if-no-files-found: error

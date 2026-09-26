@@ -1,0 +1,33 @@
+name: Prototype alive
+on:
+  pull_request:
+    branches: [main]
+    paths: ['assets/models/**','scripts/prototype_alive.py','.github/workflows/prototype-alive.yml']
+  workflow_dispatch:
+jobs:
+  prototype-alive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Blender and FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender ffmpeg python3-numpy libegl1 libgl1 libglx-mesa0 libopengl0 mesa-utils
+      - name: Build Limijoy camera-notice behaviour
+        run: blender --background --python-exit-code 1 --python scripts/prototype_alive.py -- --model=assets/models/glimmerkin.glb
+      - name: Build MP4 and GIF previews
+        run: |
+          cd output/prototype-alive
+          ffmpeg -y -framerate 24 -i alive_%03d.png -c:v libx264 -pix_fmt yuv420p -movflags +faststart preview.mp4
+          ffmpeg -y -framerate 24 -i alive_%03d.png -vf "fps=12,scale=384:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer" -loop 0 preview.gif
+          mkdir -p review
+          cp preview.mp4 preview.gif review/
+          ls -lh review/preview.mp4 review/preview.gif
+      - name: Upload preview only
+        uses: actions/upload-artifact@v4
+        with:
+          name: limijoy-camera-notice-preview
+          path: output/prototype-alive/review/
+          retention-days: 7
+          if-no-files-found: error

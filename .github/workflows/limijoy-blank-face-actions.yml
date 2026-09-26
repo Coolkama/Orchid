@@ -1,0 +1,61 @@
+name: Limijoy blank-face action compatibility
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'assets/models/glimmerkin-blank-face-candidate.glb'
+      - 'scripts/limijoy_rig_profiles.py'
+      - 'scripts/limijoy_rig_profile_adapter.py'
+      - 'scripts/limijoy_arm_semantic_controls.py'
+      - 'scripts/limijoy_body_semantic_controls.py'
+      - 'scripts/limijoy_semantic_actions.py'
+      - 'scripts/limijoy_blank_face_action_compatibility.py'
+      - '.github/workflows/limijoy-blank-face-actions.yml'
+  workflow_dispatch:
+
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Blender and image tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender python3-numpy imagemagick libegl1 libgl1 libglx-mesa0 libopengl0 mesa-utils
+          blender --version
+
+      - name: Render semantic action compatibility stills
+        run: |
+          blender --background --python-exit-code 1 \
+            --python scripts/limijoy_blank_face_action_compatibility.py -- \
+            --model=assets/models/glimmerkin-blank-face-candidate.glb
+
+      - name: Build action comparison sheet
+        run: |
+          montage output/limijoy-blank-face-actions/stills/*.png \
+            -thumbnail 420x420 \
+            -tile 4x \
+            -geometry +16+34 \
+            -background '#17151d' \
+            -fill '#f5f0e8' \
+            -stroke none \
+            -pointsize 18 \
+            -set label '%t' \
+            output/limijoy-blank-face-actions/action-comparison.png
+
+      - name: List generated files
+        run: |
+          find output/limijoy-blank-face-actions -maxdepth 2 -type f -printf '%p %k KB\n' | sort
+
+      - name: Upload compatibility review
+        uses: actions/upload-artifact@v4
+        with:
+          name: limijoy-blank-face-actions
+          path: output/limijoy-blank-face-actions/
+          retention-days: 7
+          if-no-files-found: error

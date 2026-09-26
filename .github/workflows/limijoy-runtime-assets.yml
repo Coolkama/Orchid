@@ -1,0 +1,94 @@
+name: Limijoy runtime keeper assets
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'assets/models/glimmerkin-tpose-blank-face-candidate.glb'
+      - 'assets/Ace-art/character-sheet/limijoy-face-*-overlay.png'
+      - 'scripts/generate_limijoy_tpose_face_textures.py'
+      - 'scripts/limijoy_tpose_face_review.py'
+      - 'scripts/build_limijoy_runtime_assets.py'
+      - 'scripts/limijoy_rig_profiles.py'
+      - 'scripts/limijoy_rig_profile_adapter.py'
+      - 'scripts/limijoy_body_semantic_controls.py'
+      - '.github/workflows/limijoy-runtime-assets.yml'
+  workflow_dispatch:
+
+jobs:
+  runtime-assets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out Orchid keeper
+        uses: actions/checkout@v4
+
+      - name: Install Blender and image tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender python3-numpy python3-pil imagemagick libegl1 libgl1 libglx-mesa0 libopengl0 mesa-utils
+          blender --version
+
+      - name: Generate approved expression textures
+        run: |
+          python3 scripts/generate_limijoy_tpose_face_textures.py \
+            --output output/limijoy-tpose-face-review/textures
+
+      - name: Build and re-import runtime keeper
+        run: |
+          blender --background --python-exit-code 1 \
+            --python scripts/build_limijoy_runtime_assets.py -- \
+            --model=assets/models/glimmerkin-tpose-blank-face-candidate.glb \
+            --textures=output/limijoy-tpose-face-review/textures
+
+      - name: Verify portable runtime contract
+        run: |
+          test -s output/limijoy-runtime-assets/glimmerkin.glb
+          test -s output/limijoy-runtime-assets/runtime-assets-report.json
+          for state in neutral blink happy curious sad determined; do
+            test -s "output/limijoy-runtime-assets/faces/limijoy-face-${state}-overlay.png"
+            test -s "output/limijoy-runtime-assets/renders/10-${state}-front.png"
+          done
+          for direction in left right up down; do
+            test -s "output/limijoy-runtime-assets/renders/20-head-${direction}.png"
+          done
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('output/limijoy-runtime-assets/runtime-assets-report.json').read_text())
+          assert report['rig_profile'] == 'tpose-blank-face-candidate-45'
+          assert report['bone_count'] == 45
+          assert report['runtime_face_shell']['skinned'] is True
+          assert report['face_contract']['visible_width_scale'] == 0.855
+          print(json.dumps(report, indent=2))
+          PY
+
+      - name: Build runtime comparison sheet
+        if: always()
+        run: |
+          if compgen -G 'output/limijoy-runtime-assets/renders/*.png' > /dev/null; then
+            montage output/limijoy-runtime-assets/renders/*.png \
+              -thumbnail 460x460 \
+              -tile 3x \
+              -geometry +18+38 \
+              -background '#17151d' \
+              -fill '#f5f0e8' \
+              -stroke none \
+              -pointsize 20 \
+              -set label '%t' \
+              output/limijoy-runtime-assets/runtime-comparison.png
+          fi
+
+      - name: List runtime files
+        if: always()
+        run: |
+          find output/limijoy-runtime-assets -maxdepth 2 -type f -printf '%p %k KB\n' 2>/dev/null | sort || true
+
+      - name: Upload portable runtime keeper
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: limijoy-runtime-assets
+          path: output/limijoy-runtime-assets/
+          retention-days: 7
+          if-no-files-found: warn

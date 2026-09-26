@@ -1,0 +1,25 @@
+name: Limijoy arm diagnostic
+on:
+  pull_request:
+    branches: [main]
+    paths: ['assets/models/**','scripts/limijoy_arm_diagnostic.py','.github/workflows/limijoy-arm-diagnostic.yml']
+  workflow_dispatch:
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Blender
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender python3-numpy libegl1 libgl1 libglx-mesa0 libopengl0 mesa-utils
+      - name: Render arm control stills
+        run: blender --background --python-exit-code 1 --python scripts/limijoy_arm_diagnostic.py -- --model=assets/models/glimmerkin.glb
+      - name: Upload diagnostic
+        uses: actions/upload-artifact@v4
+        with:
+          name: limijoy-arm-diagnostic
+          path: output/limijoy-arm-diagnostic/
+          retention-days: 7
+          if-no-files-found: error
